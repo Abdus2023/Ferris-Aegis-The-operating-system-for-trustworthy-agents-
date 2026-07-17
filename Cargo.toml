@@ -1,0 +1,60 @@
+[package]
+name = "ferris-aegis"
+version = "0.1.0"
+edition = "2021"
+description = "The Rust Guardian for Autonomous Intelligence — An operating system for trustworthy agents"
+license = "MIT OR Apache-2.0"
+authors = ["Ferris Aegis Contributors"]
+repository = "https://github.com/Abdus2023/Ferris-Aegis-The-operating-system-for-trustworthy-agents-"
+keywords = ["ai", "agents", "trust", "safety", "autonomous"]
+categories = ["science::robotics", "os", "embedded"]
+readme = "README.md"
+
+[[bin]]
+name = "aegis"
+path = "src/bin/aegis.rs"
+
+[lib]
+name = "ferris_aegis"
+path = "src/lib.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Cryptographic hashing for audit ledger
+sha2 = "0.10"
+
+# UUID generation
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Configuration
+toml = "0.8"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Pattern matching for policy rules
+glob = "0.3"
+
+# Hex encoding
+hex = "0.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3"
