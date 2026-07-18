@@ -1,0 +1,28 @@
+[policy]
+name = "sovereign-policy"
+version = "1.0.0"
+priority = 200
+enabled = true
+default_effect = "allow"
+
+# ── Sovereign Agent Policy ────────────────────────────────────────
+# This policy grants maximum freedom to sovereign agents while still
+# maintaining critical safety boundaries.
+
+[[rules]]
+action = "file:write"
+effect = "deny"
+targets = ["/etc/shadow", "/etc/passwd"]
+description = "Never allow writing to authentication files, even for sovereigns"
+
+[[rules]]
+action = "exec:*"
+effect = "allow"
+targets = []
+description = "Allow code execution for sovereign agents"
+
+[[rules]]
+action = "policy:modify"
+effect = "allow"
+targets = []
+description = "Allow policy modification for sovereign agents"

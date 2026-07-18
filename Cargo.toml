@@ -1,0 +1,124 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/kernel",
+    "crates/observability",
+    "crates/mcp",
+    "crates/security",
+    "crates/sandbox-wasm",
+    "crates/memory",
+    "crates/plugin",
+    ".",
+]
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT OR Apache-2.0"
+authors = ["Ferris Aegis Contributors"]
+repository = "https://github.com/Abdus2023/Ferris-Aegis-The-operating-system-for-trustworthy-agents-"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Cryptographic hashing
+sha2 = "0.10"
+
+# UUID generation
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Configuration
+toml = "0.8"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Pattern matching
+glob = "0.3"
+
+# Hex encoding
+hex = "0.4"
+
+# Observability (Week 3)
+tracing-opentelemetry = "0.28"
+opentelemetry = "0.27"
+opentelemetry-otlp = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+prometheus = "0.13"
+
+# MCP (Week 4)
+rmcp = { version = "2.2", features = ["server", "macros", "transport-io"] }
+schemars = "0.8"
+
+# Security (Phase 3)
+secrecy = "0.10"
+zeroize = "1"
+aes-gcm = "0.11"
+ed25519-dalek = { version = "3.0", features = ["std", "rand_core"] }
+rand = "0.8"
+regex = "1"
+
+# WASM sandbox (Phase 3)
+wasmtime = "46"
+
+# Episodic memory (Phase 3)
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+missing_docs = "warn"
+
+# ── Root binary package (the `aegis` CLI) ───────────────────────
+
+[package]
+name = "ferris-aegis"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ferris Aegis — The Rust Guardian for Autonomous Intelligence"
+license.workspace = true
+
+[[bin]]
+name = "aegis"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+toml = { workspace = true }
+ferris-aegis-kernel = { path = "crates/kernel" }
+ferris-aegis-observability = { path = "crates/observability" }
+ferris-aegis-mcp = { path = "crates/mcp" }
+ferris-aegis-security = { path = "crates/security" }
+ferris-aegis-memory = { path = "crates/memory" }
+
+[dev-dependencies]
+ferris-aegis-observability = { path = "crates/observability" }
+ferris-aegis-security = { path = "crates/security" }
+ferris-aegis-sandbox-wasm = { path = "crates/sandbox-wasm" }
+ferris-aegis-memory = { path = "crates/memory" }
+ferris-aegis-plugin = { path = "crates/plugin" }
+
+[lints]
+workspace = true

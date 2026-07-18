@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#F74C00;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C73500;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="innerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Shield outline -->
+  <path d="M200 30 L350 100 L350 220 C350 300 280 360 200 380 C120 360 50 300 50 220 L50 100 Z"
+        fill="url(#shieldGrad)" stroke="#FF6B35" stroke-width="3"/>
+
+  <!-- Shield inner -->
+  <path d="M200 55 L325 115 L325 215 C325 285 270 335 200 355 C130 335 75 285 75 215 L75 115 Z"
+        fill="url(#innerGrad)" stroke="#F74C00" stroke-width="1.5" opacity="0.9"/>
+
+  <!-- Crab claws (Ferris) -->
+  <g transform="translate(200, 180)" filter="url(#glow)">
+    <!-- Left claw -->
+    <path d="M-20 -20 C-40 -50 -70 -60 -65 -30 C-60 -10 -40 0 -20 0 Z"
+          fill="#F74C00" opacity="0.9"/>
+    <!-- Right claw -->
+    <path d="M20 -20 C40 -50 70 -60 65 -30 C60 -10 40 0 20 0 Z"
+          fill="#F74C00" opacity="0.9"/>
+    <!-- Body -->
+    <ellipse cx="0" cy="10" rx="25" ry="20" fill="#F74C00" opacity="0.85"/>
+    <!-- Eyes -->
+    <circle cx="-10" cy="-5" r="4" fill="#1a1a2e"/>
+    <circle cx="10" cy="-5" r="4" fill="#1a1a2e"/>
+    <circle cx="-10" cy="-6" r="1.5" fill="#F74C00"/>
+    <circle cx="10" cy="-6" r="1.5" fill="#F74C00"/>
+    <!-- Legs -->
+    <line x1="-20" y1="20" x2="-35" y2="35" stroke="#F74C00" stroke-width="2" opacity="0.7"/>
+    <line x1="-15" y1="25" x2="-28" y2="42" stroke="#F74C00" stroke-width="2" opacity="0.7"/>
+    <line x1="20" y1="20" x2="35" y2="35" stroke="#F74C00" stroke-width="2" opacity="0.7"/>
+    <line x1="15" y1="25" x2="28" y2="42" stroke="#F74C00" stroke-width="2" opacity="0.7"/>
+  </g>
+
+  <!-- Shield horizontal bars (Aegis) -->
+  <rect x="90" y="250" width="220" height="4" rx="2" fill="#F74C00" opacity="0.6"/>
+  <rect x="110" y="265" width="180" height="3" rx="1.5" fill="#F74C00" opacity="0.4"/>
+  <rect x="130" y="278" width="140" height="2" rx="1" fill="#F74C00" opacity="0.3"/>
+
+  <!-- AEGIS text -->
+  <text x="200" y="320" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
+        font-size="36" font-weight="700" letter-spacing="8" fill="#F74C00" filter="url(#glow)">
+    AEGIS
+  </text>
+
+  <!-- Decorative dots -->
+  <circle cx="120" cy="340" r="2" fill="#F74C00" opacity="0.5"/>
+  <circle cx="200" cy="340" r="2" fill="#F74C00" opacity="0.5"/>
+  <circle cx="280" cy="340" r="2" fill="#F74C00" opacity="0.5"/>
+</svg>

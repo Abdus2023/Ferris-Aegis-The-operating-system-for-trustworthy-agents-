@@ -1,0 +1,30 @@
+[package]
+name = "ferris-aegis-kernel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ferris Aegis — Trust kernel, agent runtime, policy engine, audit ledger, sandbox, and guard"
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+toml = { workspace = true }
+clap = { workspace = true }
+glob = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3"
+
+[lints]
+workspace = true
