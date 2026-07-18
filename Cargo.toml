@@ -1,24 +1,21 @@
-[package]
-name = "ferris-aegis"
-version = "0.1.0"
+[workspace]
+resolver = "2"
+members = [
+    "crates/kernel",
+    "crates/observability",
+    "crates/mcp",
+    ".",
+]
+
+[workspace.package]
+version = "0.2.0"
 edition = "2021"
-description = "The Rust Guardian for Autonomous Intelligence — An operating system for trustworthy agents"
+rust-version = "1.82"
 license = "MIT OR Apache-2.0"
 authors = ["Ferris Aegis Contributors"]
 repository = "https://github.com/Abdus2023/Ferris-Aegis-The-operating-system-for-trustworthy-agents-"
-keywords = ["ai", "agents", "trust", "safety", "autonomous"]
-categories = ["science::robotics", "os", "embedded"]
-readme = "README.md"
 
-[[bin]]
-name = "aegis"
-path = "src/bin/aegis.rs"
-
-[lib]
-name = "ferris_aegis"
-path = "src/lib.rs"
-
-[dependencies]
+[workspace.dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
@@ -26,7 +23,7 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Cryptographic hashing for audit ledger
+# Cryptographic hashing
 sha2 = "0.10"
 
 # UUID generation
@@ -35,7 +32,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # Timestamps
 chrono = { version = "0.4", features = ["serde"] }
 
-# Logging
+# Logging / tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
@@ -49,12 +46,55 @@ toml = "0.8"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
-# Pattern matching for policy rules
+# Pattern matching
 glob = "0.3"
 
 # Hex encoding
 hex = "0.4"
 
+# Observability (Week 3)
+tracing-opentelemetry = "0.28"
+opentelemetry = "0.27"
+opentelemetry-otlp = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+prometheus = "0.13"
+
+# MCP (Week 4)
+rmcp = { version = "2.2", features = ["server", "macros", "transport-io"] }
+schemars = "0.8"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+missing_docs = "warn"
+
+# ── Root binary package (the `aegis` CLI) ───────────────────────
+
+[package]
+name = "ferris-aegis"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ferris Aegis — The Rust Guardian for Autonomous Intelligence"
+license.workspace = true
+
+[[bin]]
+name = "aegis"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+toml = { workspace = true }
+ferris-aegis-kernel = { path = "crates/kernel" }
+ferris-aegis-observability = { path = "crates/observability" }
+ferris-aegis-mcp = { path = "crates/mcp" }
+
 [dev-dependencies]
-tokio-test = "0.4"
-tempfile = "3"
+ferris-aegis-observability = { path = "crates/observability" }
+
+[lints]
+workspace = true

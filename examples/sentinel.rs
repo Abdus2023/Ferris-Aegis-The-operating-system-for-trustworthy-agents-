@@ -3,7 +3,7 @@
 //! A minimal example showing how to spawn and interact with agents
 //! using the Ferris Aegis framework.
 
-use ferris_aegis::{
+use ferris_aegis_kernel::{
     agent::AgentRuntime,
     audit::{AuditLedger, AuditSeverity},
     guard::Guard,
@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
     guard.register_agent(&sentinel_id);
 
     // Create sandbox boundary
-    sandbox.create_boundary(sentinel_id.clone(), ferris_aegis::kernel::TrustLevel::Probationary);
+    sandbox.create_boundary(sentinel_id.clone(), ferris_aegis_kernel::kernel::TrustLevel::Probationary);
 
     // ── Build trust through positive actions ────────────────────
     println!("\n▸ Building trust through positive actions...");
@@ -77,15 +77,12 @@ async fn main() -> anyhow::Result<()> {
     // ── Test policy enforcement ─────────────────────────────────
     println!("\n▸ Testing policy enforcement...");
 
-    // Allowed: reading from workspace
     let verdict = runtime.policy_engine().evaluate("file:read", "/workspace/data.txt");
     println!("  file:read /workspace/data.txt → {:?}", verdict.is_allowed());
 
-    // Denied: writing to /etc
     let verdict = runtime.policy_engine().evaluate("file:write", "/etc/passwd");
     println!("  file:write /etc/passwd → {:?}", verdict.is_allowed());
 
-    // Denied: executing code
     let verdict = runtime.policy_engine().evaluate("exec:shell", "/bin/bash");
     println!("  exec:shell /bin/bash → {:?}", verdict.is_allowed());
 
@@ -113,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
     // Check if Guard should intervene
     if let Some(action) = guard.check_trust(&sentinel_id, runtime.trust_kernel()) {
         println!("  🛡️  Guard action: {}", action);
-        if action == ferris_aegis::guard::GuardAction::Quarantine {
+        if action == ferris_aegis_kernel::guard::GuardAction::Quarantine {
             runtime.quarantine(&sentinel_id).await?;
             println!("  ⚠️  Agent has been quarantined!");
         }
@@ -123,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
     println!("\n▸ Audit Ledger verification...");
     println!("  Total entries: {}", ledger.len());
     println!("  Chain valid: {}", ledger.verify_chain());
-    println!("  Latest hash: {}...", &ledger.latest_hash()[..16]);
+    println!("  Latest hash: {}...", &ledger.latest_hash()[..16.min(ledger.latest_hash().len())]);
 
     // ── Final status ────────────────────────────────────────────
     println!("\n══════════════════════════════════════════");
