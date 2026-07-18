@@ -4,11 +4,15 @@ members = [
     "crates/kernel",
     "crates/observability",
     "crates/mcp",
+    "crates/security",
+    "crates/sandbox-wasm",
+    "crates/memory",
+    "crates/plugin",
     ".",
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT OR Apache-2.0"
@@ -63,6 +67,20 @@ prometheus = "0.13"
 rmcp = { version = "2.2", features = ["server", "macros", "transport-io"] }
 schemars = "0.8"
 
+# Security (Phase 3)
+secrecy = "0.10"
+zeroize = "1"
+aes-gcm = "0.11"
+ed25519-dalek = { version = "3.0", features = ["std", "rand_core"] }
+rand = "0.8"
+regex = "1"
+
+# WASM sandbox (Phase 3)
+wasmtime = "46"
+
+# Episodic memory (Phase 3)
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"] }
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unused_must_use = "deny"
@@ -92,9 +110,15 @@ toml = { workspace = true }
 ferris-aegis-kernel = { path = "crates/kernel" }
 ferris-aegis-observability = { path = "crates/observability" }
 ferris-aegis-mcp = { path = "crates/mcp" }
+ferris-aegis-security = { path = "crates/security" }
+ferris-aegis-memory = { path = "crates/memory" }
 
 [dev-dependencies]
 ferris-aegis-observability = { path = "crates/observability" }
+ferris-aegis-security = { path = "crates/security" }
+ferris-aegis-sandbox-wasm = { path = "crates/sandbox-wasm" }
+ferris-aegis-memory = { path = "crates/memory" }
+ferris-aegis-plugin = { path = "crates/plugin" }
 
 [lints]
 workspace = true
