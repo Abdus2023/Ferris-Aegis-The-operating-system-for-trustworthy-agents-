@@ -1,0 +1,50 @@
+{
+  "skills": [
+    {
+      "id": "research-planner",
+      "name": "Research Planner",
+      "version": "1.2.0",
+      "author": "Acme Research Labs",
+      "description": "Plans research tasks with web search and information synthesis",
+      "download_url": "https://skill-registry.dev/research-planner/1.2.0/SKILL.md",
+      "signature_url": "https://skill-registry.dev/research-planner/1.2.0/SKILL.sig",
+      "published_at": "2026-06-15T10:00:00Z",
+      "tags": ["research", "planning", "analysis"],
+      "popularity": 342,
+      "dependencies": {
+        "skills": ["web-search@>=1.0.0"],
+        "models": ["claude-3-opus"]
+      },
+      "supported_runtimes": ["claude-code", "cursor", "ferris-aegis"]
+    },
+    {
+      "id": "web-search",
+      "name": "Web Search",
+      "version": "2.1.0",
+      "author": "Search Research Team",
+      "description": "Searches the web via multiple APIs with result aggregation",
+      "download_url": "https://skill-registry.dev/web-search/2.1.0/SKILL.md",
+      "signature_url": "https://skill-registry.dev/web-search/2.1.0/SKILL.sig",
+      "published_at": "2026-07-10T14:30:00Z",
+      "tags": ["search", "web", "information-retrieval"],
+      "popularity": 1240,
+      "supported_runtimes": ["claude-code", "cursor", "ferris-aegis"]
+    },
+    {
+      "id": "code-reviewer",
+      "name": "Code Reviewer",
+      "version": "1.0.0",
+      "author": "DevTools Team",
+      "description": "Reviews code for bugs, security issues, and style violations",
+      "download_url": "https://skill-registry.dev/code-reviewer/1.0.0/SKILL.md",
+      "signature_url": "https://skill-registry.dev/code-reviewer/1.0.0/SKILL.sig",
+      "published_at": "2026-07-19T09:15:00Z",
+      "tags": ["code-review", "security", "quality"],
+      "popularity": 89,
+      "dependencies": {
+        "models": ["claude-3-opus"]
+      },
+      "supported_runtimes": ["cursor", "vscode", "ferris-aegis"]
+    }
+  ]
+}
