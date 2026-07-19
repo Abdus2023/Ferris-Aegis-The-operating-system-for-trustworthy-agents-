@@ -15,6 +15,7 @@ use ferris_aegis_kernel::{
     sandbox::Sandbox,
     CODENAME, VERSION,
 };
+use ferris_aegis_skills::{SkillRegistry, SkillRegistryConfig};
 
 #[derive(Parser)]
 #[command(name = "aegis")]
@@ -81,6 +82,12 @@ enum Commands {
 
     /// Run health checks on all components
     Health,
+
+    /// Manage Agent Skills (SKILL.md ecosystem)
+    Skills {
+        #[command(subcommand)]
+        action: SkillCommands,
+    },
 
     /// Verify the audit ledger integrity
     Verify,
@@ -198,6 +205,24 @@ enum MemoryCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum SkillCommands {
+    /// List all discovered skills
+    List,
+
+    /// Validate all skills against agentskills.io spec
+    Validate,
+
+    /// Show details for a specific skill
+    Show {
+        /// Skill name
+        name: String,
+    },
+
+    /// Generate the discovery index JSON
+    Index,
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -246,6 +271,9 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Commands::Health => {
             show_health()?;
+        }
+        Commands::Skills { action } => {
+            run_skill_command(action).await?;
         }
         Commands::Verify => {
             verify_ledger()?;
@@ -524,6 +552,11 @@ fn show_status() -> anyhow::Result<()> {
     println!("  Checkpoint Store: ○ Ready (In-memory + SQLite)");
     println!("  Hash Verification:○ Ready (Tamper evidence)");
     println!();
+    println!("Phase 5.2 — Agent Skills:");
+    println!("  Skill Registry:   ○ Ready (SKILL.md discovery + validation)");
+    println!("  10 Skills:        ○ Installed (agentskills.io v0.2.0)");
+    println!("  CLI:              ○ aegis skills list/validate/show/index");
+    println!();
     Ok(())
 }
 
@@ -595,6 +628,126 @@ fn init_config(directory: &str) -> anyhow::Result<()> {
     let policy_path = policies_dir.join("default-safety.toml");
     std::fs::write(&policy_path, default_policy)?;
     println!("  Default policy: {}", policy_path.display());
+
+    Ok(())
+}
+
+async fn run_skill_command(action: SkillCommands) -> anyhow::Result<()> {
+    let config = SkillRegistryConfig::default();
+    let mut registry = SkillRegistry::new(config);
+
+    // Discover skills
+    let count = registry.discover(".agents/skills").await?;
+
+    match action {
+        SkillCommands::List => {
+            println!();
+            println!("🧰 Ferris Aegis Agent Skills");
+            println!("═════════════════════════════");
+            println!("Discovered: {} skills", count);
+            println!();
+
+            if count == 0 {
+                println!("  No skills found in .agents/skills/");
+                println!("  Use 'aegis skills index' to generate the discovery index.");
+                return Ok(());
+            }
+
+            for skill in registry.list_skills() {
+                println!("  • {} — {}", skill.name, 
+                    skill.description.chars().take(80).collect::<String>());
+                if let Some(c) = skill.frontmatter.aegis_crate() {
+                    println!("    Crate: {}", c);
+                }
+                if let Some(p) = skill.frontmatter.aegis_phase() {
+                    println!("    Phase: {}", p);
+                }
+            }
+            println!();
+        }
+        SkillCommands::Validate => {
+            println!();
+            println!("✓ Ferris Aegis Skill Validation");
+            println!("════════════════════════════════");
+            println!();
+
+            if count == 0 {
+                println!("  No skills found to validate.");
+                return Ok(());
+            }
+
+            let results = registry.validate_all();
+            let mut valid = 0;
+            let mut invalid = 0;
+
+            for result in &results {
+                if result.is_valid() {
+                    valid += 1;
+                    println!("  ✓ {}", result.skill_name);
+                    for warning in &result.warnings {
+                        println!("    ⚠ {}", warning);
+                    }
+                } else {
+                    invalid += 1;
+                    println!("  ✗ {}", result.skill_name);
+                    for error in &result.errors {
+                        println!("    ✗ [{}] {}", error.rule, error.message);
+                    }
+                    for warning in &result.warnings {
+                        println!("    ⚠ {}", warning);
+                    }
+                }
+            }
+
+            println!();
+            println!("Results: {} valid, {} invalid, {} total", valid, invalid, results.len());
+            println!();
+        }
+        SkillCommands::Show { name } => {
+            let skill = registry.load_skill(&name).await?;
+
+            println!();
+            println!("🧰 {}", skill.metadata.name);
+            println!("═════════════════════════════");
+            println!("Description: {}", skill.metadata.description);
+            if let Some(license) = &skill.metadata.frontmatter.license {
+                println!("License: {}", license);
+            }
+            if let Some(c) = skill.metadata.frontmatter.aegis_crate() {
+                println!("Crate: {}", c);
+            }
+            if let Some(p) = skill.metadata.frontmatter.aegis_phase() {
+                println!("Phase: {}", p);
+            }
+            if let Some(v) = skill.metadata.frontmatter.version() {
+                println!("Version: {}", v);
+            }
+            if let Some(inv) = skill.metadata.frontmatter.aegis_invariants() {
+                println!("Invariants: {}", inv);
+            }
+            let tools = skill.metadata.frontmatter.allowed_tools_list();
+            if !tools.is_empty() {
+                println!("Allowed tools: {}", tools.join(", "));
+            }
+            println!();
+            println!("Resources:");
+            println!("  Scripts:    {} files", skill.resources.scripts.len());
+            println!("  References: {} files", skill.resources.references.len());
+            println!("  Assets:     {} files", skill.resources.assets.len());
+            println!();
+            println!("Instructions ({} chars):", skill.instructions.len());
+            println!("{}", skill.instructions.chars().take(500).collect::<String>());
+            if skill.instructions.len() > 500 {
+                println!("... (truncated)");
+            }
+            println!();
+        }
+        SkillCommands::Index => {
+            let index = registry.generate_index();
+            let json = index.to_json()?;
+            println!("{}", json);
+        }
+    }
 
     Ok(())
 }

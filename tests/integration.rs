@@ -1107,3 +1107,161 @@ async fn completion_criterion_39_full_pipeline_with_durable() {
     let health = SystemHealth::new();
     assert!(health.report().is_healthy());
 }
+
+// ── Phase 5.2: Agent Skills ─────────────────────────────────────
+
+use ferris_aegis_skills::{
+    SkillFrontmatter, SkillIndex, SkillMetadata, SkillRegistry, SkillRegistryConfig,
+    SkillValidator,
+};
+
+// □ Completion Criterion 40: Skill frontmatter parsing
+#[test]
+fn completion_criterion_40_skill_frontmatter_parsing() {
+    let content = r#"---
+name: aegis-trust-kernel
+description: Manages trust scores. Use when the user mentions trust score.
+license: "MIT OR Apache-2.0"
+metadata:
+  aegis-crate: "ferris-aegis-kernel"
+  aegis-phase: "1"
+  version: "0.4.0"
+  tags: "trust kernel audit"
+allowed-tools: Bash(cargo:*) Read
+---
+# Instructions"#;
+
+    let fm = SkillRegistry::parse_frontmatter(content).unwrap();
+    assert_eq!(fm.name, "aegis-trust-kernel");
+    assert_eq!(fm.aegis_crate(), Some("ferris-aegis-kernel"));
+    assert_eq!(fm.aegis_phase(), Some("1"));
+    assert_eq!(fm.version(), Some("0.4.0"));
+    assert_eq!(fm.tags(), vec!["trust", "kernel", "audit"]);
+    assert_eq!(fm.allowed_tools_list(), vec!["Bash(cargo:*)", "Read"]);
+}
+
+// □ Completion Criterion 41: Skill validation — valid skill passes
+#[test]
+fn completion_criterion_41_skill_validation_valid() {
+    let path = std::path::Path::new("/skills/aegis-trust-kernel");
+    let fm = SkillFrontmatter {
+        name: "aegis-trust-kernel".to_string(),
+        description: "Manages trust scores. Use when the user mentions trust.".to_string(),
+        license: Some("MIT OR Apache-2.0".to_string()),
+        compatibility: None,
+        metadata: None,
+        allowed_tools: None,
+    };
+
+    let result = SkillValidator::validate(path, &fm);
+    assert!(result.is_valid(), "Valid skill should pass validation");
+    assert!(result.errors.is_empty());
+}
+
+// □ Completion Criterion 42: Skill validation — invalid name fails
+#[test]
+fn completion_criterion_42_skill_validation_invalid_name() {
+    let path = std::path::Path::new("/skills/INVALID_NAME");
+    let fm = SkillFrontmatter {
+        name: "INVALID_NAME".to_string(),
+        description: "A skill. Use when testing.".to_string(),
+        license: None,
+        compatibility: None,
+        metadata: None,
+        allowed_tools: None,
+    };
+
+    let result = SkillValidator::validate(path, &fm);
+    assert!(!result.is_valid(), "Invalid name should fail validation");
+    assert!(result.errors.iter().any(|e| e.rule == "name-format"));
+}
+
+// □ Completion Criterion 43: Skill discovery index generation
+#[test]
+fn completion_criterion_43_skill_discovery_index() {
+    let mut index = SkillIndex::new();
+    assert_eq!(index.skills.len(), 0);
+
+    let metadata = SkillMetadata {
+        name: "aegis-durable-workflow".to_string(),
+        description: "Creates durable workflows. Use when the user says durable.".to_string(),
+        path: std::path::PathBuf::from(".agents/skills/aegis-durable-workflow"),
+        digest: "abc123def456".to_string(),
+        frontmatter: SkillFrontmatter {
+            name: "aegis-durable-workflow".to_string(),
+            description: "Creates durable workflows. Use when the user says durable.".to_string(),
+            license: None,
+            compatibility: None,
+            metadata: None,
+            allowed_tools: None,
+        },
+    };
+
+    index.add_skill(&metadata);
+    assert_eq!(index.skills.len(), 1);
+    assert_eq!(index.skills[0].name, "aegis-durable-workflow");
+    assert_eq!(index.skills[0].entry_type, "skill-md");
+    assert_eq!(index.skills[0].url, "/.well-known/agent-skills/aegis-durable-workflow/SKILL.md");
+
+    let json = index.to_json().unwrap();
+    assert!(json.contains("\"$schema\""));
+    assert!(json.contains("aegis-durable-workflow"));
+}
+
+// □ Completion Criterion 44: Skill digest integrity
+#[test]
+fn completion_criterion_44_skill_digest_integrity() {
+    let content = b"---\nname: test\ndescription: test\n---\n# Body";
+    let d1 = SkillMetadata::compute_digest(content);
+    let d2 = SkillMetadata::compute_digest(content);
+    assert_eq!(d1, d2, "Same content should produce same digest");
+
+    let d3 = SkillMetadata::compute_digest(b"different content");
+    assert_ne!(d1, d3, "Different content should produce different digest");
+}
+
+// □ Completion Criterion 45: Skill name-directory mismatch detected
+#[test]
+fn completion_criterion_45_skill_name_directory_mismatch() {
+    let path = std::path::Path::new("/skills/wrong-directory");
+    let fm = SkillFrontmatter {
+        name: "different-name".to_string(),
+        description: "A skill. Use when testing.".to_string(),
+        license: None,
+        compatibility: None,
+        metadata: None,
+        allowed_tools: None,
+    };
+
+    let result = SkillValidator::validate(path, &fm);
+    assert!(!result.is_valid());
+    assert!(result.errors.iter().any(|e| e.rule == "name-matches-directory"));
+}
+
+// □ Completion Criterion 46: Skill body extraction
+#[test]
+fn completion_criterion_46_skill_body_extraction() {
+    let content = "---\nname: test-skill\ndescription: A test\n---\n# Heading\n\nStep 1: Do thing.";
+    let body = SkillRegistry::extract_body(content).unwrap();
+    assert!(body.contains("# Heading"));
+    assert!(body.contains("Step 1"));
+    assert!(!body.contains("name: test-skill"));
+}
+
+// □ Completion Criterion 47: Skill validation warns on missing "Use when"
+#[test]
+fn completion_criterion_47_skill_validation_use_when_warning() {
+    let path = std::path::Path::new("/skills/test-skill");
+    let fm = SkillFrontmatter {
+        name: "test-skill".to_string(),
+        description: "Does something cool.".to_string(), // No "Use when"
+        license: None,
+        compatibility: None,
+        metadata: None,
+        allowed_tools: None,
+    };
+
+    let result = SkillValidator::validate(path, &fm);
+    assert!(result.is_valid(), "Should still be valid");
+    assert!(!result.warnings.is_empty(), "Should have warning about missing 'Use when'");
+}

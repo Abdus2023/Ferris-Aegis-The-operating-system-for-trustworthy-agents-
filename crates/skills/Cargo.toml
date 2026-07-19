@@ -1,0 +1,24 @@
+[package]
+name = "ferris-aegis-skills"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ferris Aegis — Agent Skill discovery, parsing, validation, and loading (SKILL.md ecosystem)"
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+regex = { workspace = true }
+
+[lints]
+workspace = true

@@ -15,6 +15,7 @@
 | 4 | Session, Supervisor, Semantic Memory, A2A | `session`, `supervisor`, `semantic-memory`, `a2a` | Merged (PR #4) |
 | 5 | Resilience, Health, Config Validation, CLI hardening | `resilience`, `kernel/health.rs`, `kernel/config.rs` | Merged (PR #4) |
 | 5.1 | Durable Execution, Checkpoint Durability, Crash Recovery | `durable` | In this PR |
+| 5.2 | Agent Skills (SKILL.md), Discovery, Validation, CLI | `skills` + `.agents/skills/` | In this PR |
 
 ## 2. Crate Inventory
 
@@ -33,9 +34,10 @@
 | 11 | `ferris-aegis-a2a` | 1,287 | AgentCard + trust-gated routing + Branch A/B |
 | 12 | `ferris-aegis-resilience` | 1,046 | Circuit breaker, retry, timeout, rate limiter, health registry |
 | 13 | `ferris-aegis-durable` | ~1,200 | Durable execution, checkpoint durability, crash recovery |
-| — | `ferris-aegis` (CLI) | ~620 | Root binary |
-| — | Integration tests | ~1,100 | 47 end-to-end tests |
-| | | **~13,100** | |
+| 14 | `ferris-aegis-skills` | ~800 | SKILL.md discovery, parsing, validation, loading |
+| — | `ferris-aegis` (CLI) | ~750 | Root binary |
+| — | Integration tests | ~1,350 | 55 end-to-end tests |
+| | | **~14,000** | |
 
 ## 3. Architectural Decision Records
 
@@ -88,6 +90,13 @@ the executor re-executes only the interrupted step.
 Every `Checkpoint` includes a SHA-256 content hash over all step outcomes.
 On load, `verify_hash()` detects tampering. Enabled by `DurableExecutorConfig.verify_hashes`.
 **Traced to:** `durable/src/lib.rs` → `Checkpoint::verify_hash()`
+
+### ADR-013: Skill Registry with agentskills.io Compliance
+`ferris-aegis-skills` crate provides programmatic SKILL.md discovery, parsing, validation,
+and index generation. Complies with agentskills.io v0.2.0 specification. Extension fields
+(`aegis-crate`, `aegis-phase`, `aegis-depends`, `aegis-invariants`) stored in `metadata:`
+to maintain cross-platform portability.
+**Traced to:** `crates/skills/src/lib.rs` → `SkillRegistry`, `SkillValidator`, `SkillIndex`
 
 ## 4. Dependency Version Traceability
 
