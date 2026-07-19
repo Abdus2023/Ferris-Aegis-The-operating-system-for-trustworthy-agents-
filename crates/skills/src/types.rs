@@ -246,6 +246,12 @@ pub struct Skill {
     #[serde(default)]
     pub signature: Option<Signature>,
 
+    // Input/Output schemas (for MCP tool export)
+    #[serde(default)]
+    pub inputs: HashMap<String, SkillInputSpec>,
+    #[serde(default)]
+    pub outputs: HashMap<String, SkillOutputSpec>,
+
     // The actual markdown content (body after frontmatter)
     #[serde(skip)]
     pub content: String,
@@ -290,13 +296,28 @@ pub enum ExecutionStatus {
     TimedOut,
 }
 
-/// Skill metadata for discovery and caching.
-#[derive(Debug, Clone)]
-pub struct SkillMetadata {
-    pub skill_id: SkillId,
-    pub version: String,
-    pub category: String,
-    pub trust_level_minimum: TrustLevelRequired,
-    pub capabilities_required: Vec<Capability>,
-    pub last_loaded: DateTime<Utc>,
+/// Skill input specification (from SKILL.md frontmatter)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillInputSpec {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub description: String,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub default: Option<serde_json::Value>,
+    #[serde(rename = "enum", default)]
+    pub enum_: Option<Vec<serde_json::Value>>,
+    pub minimum: Option<f64>,
+    pub maximum: Option<f64>,
+}
+
+/// Skill output specification (from SKILL.md frontmatter)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillOutputSpec {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub description: String,
+    pub properties: Option<serde_json::Value>,
+    pub items: Option<serde_json::Value>,
 }
