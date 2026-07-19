@@ -310,7 +310,7 @@ use ferris_aegis_session::{Session, SessionManager};
 use ferris_aegis_supervisor::{Supervisor, SupervisorConfig, Severity, FindingType, Recommendation};
 use ferris_aegis_semantic_memory::SemanticMemory;
 use ferris_aegis_a2a::{
-    AgentCard, A2aMessage, A2aEnvelope, A2aRouter,
+    AgentCard, AgentSkill, A2aMessage, A2aEnvelope, A2aRouter,
     MessageType, TrustLevel as A2aTrustLevel, Attestation,
     A2A_PROTOCOL_VERSION,
 };
@@ -460,16 +460,23 @@ async fn completion_criterion_13_semantic_memory() {
 // □ Completion Criterion 14: A2A AgentCard with JSON Schema generation
 #[test]
 fn completion_criterion_14_a2a_agent_card() {
-    let card = AgentCard::new("test-agent", "1.0.0", "A test agent")
+    let card = AgentCard::new("test-agent", "https://agent.example.com/a2a", "1.0.0")
         .with_trust(A2aTrustLevel::Standard, 0.7)
-        .with_capability("file_read")
-        .with_transport("http")
-        .with_endpoint("https://agent.example.com/a2a");
+        .with_description("A test agent")
+        .with_skill(AgentSkill {
+            id: "file_read".to_string(),
+            name: "File Read".to_string(),
+            description: "Read files from the filesystem".to_string(),
+            input_schema: None,
+            output_schema: None,
+            tags: vec!["file".to_string()],
+        });
 
     assert_eq!(card.name, "test-agent");
     assert_eq!(card.trust_level, A2aTrustLevel::Standard);
     assert!(card.is_compatible_with(A2A_PROTOCOL_VERSION));
     assert!(!card.is_compatible_with("0.2.0"));
+    assert_eq!(card.url, "https://agent.example.com/a2a");
 
     // JSON Schema generation via schemars
     let schema = AgentCard::json_schema();
@@ -482,15 +489,27 @@ fn completion_criterion_15_a2a_routing() {
     let mut router = A2aRouter::new();
 
     // Register two agents
-    let sender = AgentCard::new("agent-a", "1.0.0", "Sender")
+    let sender = AgentCard::new("agent-a", "http://agent-a.local", "1.0.0")
         .with_trust(A2aTrustLevel::Standard, 0.7)
-        .with_capability("file_read")
-        .with_transport("http");
+        .with_skill(AgentSkill {
+            id: "file_read".to_string(),
+            name: "File Read".to_string(),
+            description: "Read files".to_string(),
+            input_schema: None,
+            output_schema: None,
+            tags: vec![],
+        });
 
-    let recipient = AgentCard::new("agent-b", "1.0.0", "Recipient")
+    let recipient = AgentCard::new("agent-b", "http://agent-b.local", "1.0.0")
         .with_trust(A2aTrustLevel::Standard, 0.6)
-        .with_capability("file_read")
-        .with_transport("http");
+        .with_skill(AgentSkill {
+            id: "file_read".to_string(),
+            name: "File Read".to_string(),
+            description: "Read files".to_string(),
+            input_schema: None,
+            output_schema: None,
+            tags: vec![],
+        });
 
     router.register(sender.clone());
     router.register(recipient.clone());
