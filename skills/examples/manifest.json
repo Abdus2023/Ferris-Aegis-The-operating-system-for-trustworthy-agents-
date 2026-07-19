@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/1.0.0/schema.json",
+  "spec_version": "1.0.0",
+  "registry": "local",
+  "updated_at": "2026-07-19T00:00:00Z",
+  "skills": [
+    {
+      "id": "skill:research:research-planner",
+      "name": "research-planner",
+      "version": "1.0.0",
+      "type": "skill-md",
+      "description": "Orchestrates multi-step research workflows combining web search, source evaluation, and synthesis into structured reports. Use when the user needs to research a topic, compare sources, or produce a research brief.",
+      "url": "/.well-known/agent-skills/research-planner/SKILL.md",
+      "digest": "sha256:computed-on-install",
+      "runtime": "mcp",
+      "permissions": ["network.http.get", "filesystem.read.tmp", "filesystem.write.tmp"],
+      "author": "ferris-aegis",
+      "license": "MIT OR Apache-2.0",
+      "trust_level": "Standard",
+      "lifecycle": "stable",
+      "dependencies": {
+        "skills": ["skill:search:web-search", "skill:analysis:source-evaluator"],
+        "tools": ["web_search"],
+        "models": ["gpt-4o"]
+      }
+    },
+    {
+      "id": "skill:search:web-search",
+      "name": "web-search",
+      "version": "1.0.0",
+      "type": "skill-md",
+      "description": "Performs multi-source web search aggregation with result ranking, deduplication, and credibility scoring. Use when the user needs to search the web, find information online, look up a topic, or gather sources.",
+      "url": "/.well-known/agent-skills/web-search/SKILL.md",
+      "digest": "sha256:computed-on-install",
+      "runtime": "mcp",
+      "permissions": ["network.http.get"],
+      "author": "ferris-aegis",
+      "license": "MIT OR Apache-2.0",
+      "trust_level": "Probationary",
+      "lifecycle": "stable",
+      "dependencies": {
+        "skills": [],
+        "tools": ["web_search"],
+        "models": []
+      }
+    },
+    {
+      "id": "skill:analysis:code-reviewer",
+      "name": "code-reviewer",
+      "version": "1.0.0",
+      "type": "skill-md",
+      "description": "Performs comprehensive code review combining security analysis, quality assessment, and best-practice checking. Use when the user wants code reviewed, asks for security issues, requests a code audit, or wants to check code quality.",
+      "url": "/.well-known/agent-skills/code-reviewer/SKILL.md",
+      "digest": "sha256:computed-on-install",
+      "runtime": "mcp",
+      "permissions": ["filesystem.read.tmp", "filesystem.read.src", "crypto.hash"],
+      "author": "ferris-aegis",
+      "license": "MIT OR Apache-2.0",
+      "trust_level": "Standard",
+      "lifecycle": "stable",
+      "dependencies": {
+        "skills": [],
+        "tools": ["file_read"],
+        "models": []
+      }
+    }
+  ]
+}

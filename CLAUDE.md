@@ -51,11 +51,20 @@ cargo clippy --workspace -- -D warnings
 
 Skills are in `.agents/skills/` — 10 SKILL.md files compliant with agentskills.io v0.2.0.
 
+The `ferris-aegis-skills` crate supports both v0.2.0 and v1.0.0 (vendor-neutral) formats.
+Skills with `spec_version: "1.0.0"` in frontmatter use the richer format with IDs, permissions,
+inputs/outputs, dependencies, and runtime extension blocks.
+
+Vendor-neutral example skills are in `skills/examples/`.
+
 ```bash
 aegis skills list       # List discovered skills
 aegis skills validate   # Validate all skills
 aegis skills show NAME  # Show skill details
 aegis skills index      # Generate discovery index JSON
+aegis skill run <id>    # Run a skill with inputs (v1.0.0)
+aegis skill sign <id>   # Sign a skill with Ed25519 (v1.0.0)
+aegis skill verify <id> # Verify a skill's signature (v1.0.0)
 ```
 
 ## Documentation
@@ -63,7 +72,11 @@ aegis skills index      # Generate discovery index JSON
 - `docs/TRACEABILITY.md` — End-to-end traceability: decisions → implementation → verification
 - `docs/ARCHITECTURE-QUICK-REF.md` — Security invariant reference card
 - `docs/PHASE-DELIVERY-RECORD.md` — Per-phase delivery record
-- `SKILL-SPEC.md` — Agent Skill Library specification
+- `SKILL_STANDARD_SPECIFICATION.md` — **Vendor-neutral SKILL.md spec (v1.0.0, 10-layer architecture)**
+- `SKILL_AEGIS_IMPLEMENTATION.md` — Ferris Aegis reference implementation guide (7-layer execution model)
+- `SKILL_ECOSYSTEM_SUMMARY.md` — Ecosystem overview (specs, skills, crate, observability)
+- `SKILL-SPEC.md` — Original Aegis-specific spec (agentskills.io v0.2.0, backward compat)
+- `skills/examples/` — 3 vendor-neutral example skills (research-planner, web-search, code-reviewer)
 
 ## Compile-Fix History
 

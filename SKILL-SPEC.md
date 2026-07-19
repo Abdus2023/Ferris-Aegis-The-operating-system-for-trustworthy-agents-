@@ -2,7 +2,16 @@
 
 > The complete Agent Skill Library for the Ferris Aegis Operating System for Trustworthy Agents.
 > Compliant with the [Agent Skills Open Specification](https://agentskills.io) v0.2.0.
-> Version: 0.4.0 | 13 crates | 10 skills | 47 integration tests
+> Version: 0.4.0 | 14 crates | 10 skills | 47 integration tests
+>
+> **📋 For the vendor-neutral specification (v1.0.0), see [SKILL_STANDARD_SPECIFICATION.md](./SKILL_STANDARD_SPECIFICATION.md).**
+> **📋 For the Ferris Aegis implementation guide, see [SKILL_AEGIS_IMPLEMENTATION.md](./SKILL_AEGIS_IMPLEMENTATION.md).**
+> **📋 For the ecosystem overview, see [SKILL_ECOSYSTEM_SUMMARY.md](./SKILL_ECOSYSTEM_SUMMARY.md).**
+>
+> This document describes the original Aegis-specific spec (agentskills.io v0.2.0).
+> The vendor-neutral spec in `SKILL_STANDARD_SPECIFICATION.md` is a strict superset
+> that adds 10-layer architecture, namespaced IDs, capability models, I/O contracts,
+> dependency resolution, and runtime extension blocks.
 
 ---
 
