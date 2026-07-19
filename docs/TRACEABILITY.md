@@ -124,11 +124,31 @@ On load, `verify_hash()` detects tampering. Enabled by `DurableExecutorConfig.ve
 | Git push | Pending |
 | PR | Pending |
 
-## 7. Open Items
+## 7. Agent Skill Library
+
+| # | Skill Name | Crate(s) | Phase | Invariants |
+|---|-----------|----------|-------|-----------|
+| 1 | `aegis-trust-kernel` | kernel | 1 | INV-006, INV-010 |
+| 2 | `aegis-security-pipeline` | security, sandbox-wasm | 3 | INV-001–003, 005, 007–009 |
+| 3 | `aegis-durable-workflow` | durable | 5.1 | INV-013, INV-014 |
+| 4 | `aegis-policy-authoring` | kernel::policy | 1 | INV-010 |
+| 5 | `aegis-agent-lifecycle` | kernel::agent, guard | 1 | INV-006, INV-010 |
+| 6 | `aegis-resilience-ops` | resilience, kernel::health | 5 | INV-011, INV-012 |
+| 7 | `aegis-mcp-server` | mcp, observability | 2 | INV-004 |
+| 8 | `aegis-crash-recovery` | durable | 5.1 | INV-013–015 |
+| 9 | `aegis-session-supervisor` | session, supervisor, a2a | 4 | ADR-005, 008, 009 |
+| 10 | `aegis-skill-creator` | meta | — | — |
+
+All skills comply with the [agentskills.io specification](https://agentskills.io) v0.2.0.
+Stored in `.agents/skills/` with HTTP discovery at `/.well-known/agent-skills/`.
+See `SKILL-SPEC.md` for the complete specification and architecture.
+
+## 8. Open Items
 
 1. **A2A branch** — Ship A, B, or both? Open.
 2. **CrashRecovery re-execution** — Currently returns recovery metadata; caller must
    reconstruct `Workflow` and pass to `DurableExecutor::run()`. Future: store step
    definitions in checkpoints for automatic re-execution.
+3. **Skill evaluation** — Integrate `agent-skills-eval` for empirical skill quality testing.
 
 *Maintained alongside the codebase. Update when adding crates, types, or invariants.*

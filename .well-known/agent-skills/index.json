@@ -1,0 +1,75 @@
+{
+    "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+    "skills": [
+        {
+            "name": "aegis-trust-kernel",
+            "type": "skill-md",
+            "description": "Manages agent trust scores, trust levels, and audit ledger integrity in Ferris Aegis. Use when the user mentions trust score, trust level, reinforce trust, penalize agent, audit ledger, trust lifecycle, TrustKernel, or audit chain verification.",
+            "url": "/.well-known/agent-skills/aegis-trust-kernel/SKILL.md",
+            "digest": "sha256:auto"
+        },
+        {
+            "name": "aegis-security-pipeline",
+            "type": "skill-md",
+            "description": "Runs the Ferris Aegis security pipeline: tool allowlist checks, injection scanning, SSRF guard, credential vault, and WASM sandbox operations. Use when the user says injection scan, SSRF check, credential vault, tool allowlist, WASM sandbox, ProtectedSecret, or security pipeline.",
+            "url": "/.well-known/agent-skills/aegis-security-pipeline/SKILL.md",
+            "digest": "sha256:auto"
+        },
+        {
+            "name": "aegis-durable-workflow",
+            "type": "skill-md",
+            "description": "Creates and executes durable workflows with checkpoint persistence in Ferris Aegis. Use when the user says durable execution, checkpoint durability, workflow steps, step outcome, DurableExecutor, or durable workflow.",
+            "url": "/.well-known/agent-skills/aegis-durable-workflow/SKILL.md",
+            "digest": "sha256:auto"
+        },
+        {
+            "name": "aegis-policy-authoring",
+            "type": "skill-md",
+            "description": "Authors and validates Ferris Aegis policy rules in TOML format. Use when the user says policy rule, policy engine, safety policy, TOML policy, policy authoring, or deny-by-default.",
+            "url": "/.well-known/agent-skills/aegis-policy-authoring/SKILL.md",
+            "digest": "sha256:auto"
+        },
+        {
+            "name": "aegis-agent-lifecycle",
+            "type": "skill-md",
+            "description": "Manages the full agent lifecycle in Ferris Aegis: spawning, suspending, resuming, terminating, and guarding agents. Use when the user says spawn agent, agent lifecycle, quarantine agent, guard action, agent status, or suspend agent.",
+            "url": "/.well-known/agent-skills/aegis-agent-lifecycle/SKILL.md",
+            "digest": "sha256:auto"
+        },
+        {
+            "name": "aegis-resilience-ops",
+            "type": "skill-md",
+            "description": "Operates Ferris Aegis resilience primitives: circuit breaker, retry with backoff, timeout enforcement, rate limiting, and health checks. Use when the user says circuit breaker, rate limit, retry policy, timeout, health check, or resilience pattern.",
+            "url": "/.well-known/agent-skills/aegis-resilience-ops/SKILL.md",
+            "digest": "sha256:auto"
+        },
+        {
+            "name": "aegis-mcp-server",
+            "type": "skill-md",
+            "description": "Builds and configures MCP servers in Ferris Aegis with security-instrumented tool handlers and observability. Use when the user says MCP server, file_read tool, tool handler, MCP protocol, rmcp server, or MCP stdio.",
+            "url": "/.well-known/agent-skills/aegis-mcp-server/SKILL.md",
+            "digest": "sha256:auto"
+        },
+        {
+            "name": "aegis-crash-recovery",
+            "type": "skill-md",
+            "description": "Scans for and recovers incomplete Ferris Aegis durable workflows after crashes. Use when the user says crash recovery, resume workflow, incomplete workflow, recovery scan, CrashRecovery, or resume from checkpoint.",
+            "url": "/.well-known/agent-skills/aegis-crash-recovery/SKILL.md",
+            "digest": "sha256:auto"
+        },
+        {
+            "name": "aegis-session-supervisor",
+            "type": "skill-md",
+            "description": "Manages Ferris Aegis conversation sessions, supervisor anomaly detection, and Agent-to-Agent protocol routing. Use when the user says session management, session budget, supervisor anomaly, A2A routing, AgentCard, trust-gated routing, or semantic memory.",
+            "url": "/.well-known/agent-skills/aegis-session-supervisor/SKILL.md",
+            "digest": "sha256:auto"
+        },
+        {
+            "name": "aegis-skill-creator",
+            "type": "skill-md",
+            "description": "Creates new Agent Skills in the SKILL.md format for the Ferris Aegis ecosystem. Use when the user says create skill, new skill, SKILL.md template, skill authoring, or skill creation.",
+            "url": "/.well-known/agent-skills/aegis-skill-creator/SKILL.md",
+            "digest": "sha256:auto"
+        }
+    ]
+}
