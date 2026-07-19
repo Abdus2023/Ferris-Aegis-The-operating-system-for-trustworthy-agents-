@@ -17,6 +17,7 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
 toml = { workspace = true }
+async-trait = "0.1"
 
 # Markdown + YAML frontmatter parsing
 markdown = "1"

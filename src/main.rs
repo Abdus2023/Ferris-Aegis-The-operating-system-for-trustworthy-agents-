@@ -15,6 +15,8 @@ use ferris_aegis_kernel::{
     sandbox::Sandbox,
     CODENAME, VERSION,
 };
+use ferris_aegis_skills::{SkillRegistry, SkillLoader, SkillExecutor, SkillValidator};
+use std::path::Path;
 
 #[derive(Parser)]
 #[command(name = "aegis")]
@@ -69,6 +71,12 @@ enum Commands {
         action: MemoryCommands,
     },
 
+    /// Skill management (SKILL.md)
+    Skill {
+        #[command(subcommand)]
+        action: SkillCommands,
+    },
+
     /// Inspect the audit ledger
     Audit {
         /// Number of recent entries to show
@@ -90,6 +98,85 @@ enum Commands {
         /// Directory to initialize in
         #[arg(default_value = ".")]
         directory: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillCommands {
+    /// List all available skills
+    List {
+        /// Filter by category
+        #[arg(long)]
+        category: Option<String>,
+        /// Filter by capability
+        #[arg(long)]
+        capability: Option<String>,
+    },
+
+    /// Show skill details
+    Show {
+        /// Skill ID (e.g., skill:filesystem:file-processor)
+        skill_id: String,
+    },
+
+    /// Run a skill
+    Run {
+        /// Skill ID to execute
+        skill_id: String,
+        /// JSON input for the skill
+        #[arg(long)]
+        input: Option<String>,
+        /// Input file (JSON)
+        #[arg(long, short)]
+        file: Option<String>,
+        /// Agent ID to run as
+        #[arg(long)]
+        agent: Option<String>,
+        /// Session ID
+        #[arg(long)]
+        session: Option<String>,
+    },
+
+    /// Load skills from a directory
+    Load {
+        /// Directory containing SKILL.md files
+        directory: String,
+        /// Recursively load from subdirectories
+        #[arg(long)]
+        recursive: bool,
+    },
+
+    /// Validate a skill file
+    Validate {
+        /// Path to SKILL.md file
+        path: String,
+    },
+
+    /// Sign a skill with Ed25519
+    Sign {
+        /// Path to SKILL.md file
+        path: String,
+        /// Private key file (PEM format)
+        #[arg(long)]
+        key: String,
+        /// Output signature file
+        #[arg(long, short)]
+        output: Option<String>,
+    },
+
+    /// Verify a skill's signature
+    Verify {
+        /// Path to SKILL.md file
+        path: String,
+        /// Public key file (PEM format)
+        #[arg(long)]
+        key: String,
+    },
+
+    /// Search skills
+    Search {
+        /// Search query
+        query: String,
     },
 }
 
@@ -237,6 +324,9 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Commands::Memory { action } => {
             run_memory_command(action).await?;
+        }
+        Commands::Skill { action } => {
+            run_skill_command(action).await?;
         }
         Commands::Audit { last } => {
             show_audit_log(last)?;
@@ -589,5 +679,290 @@ fn init_config(directory: &str) -> anyhow::Result<()> {
     std::fs::write(&policy_path, default_policy)?;
     println!("  Default policy: {}", policy_path.display());
 
+    Ok(())
+}
+
+async fn run_skill_command(action: SkillCommands) -> anyhow::Result<()> {
+    let mut registry = SkillRegistry::new();
+    
+    // Load built-in skills and example skills
+    if let Ok(skills_dir) = std::env::var("AEGIS_SKILLS_DIR") {
+        registry.load_from_directory_recursive(Path::new(&skills_dir))?;
+    } else {
+        // Try default locations
+        for dir in ["./skills", "./skills/examples", "/etc/ferris-aegis/skills"] {
+            if Path::new(dir).exists() {
+                registry.load_from_directory_recursive(Path::new(dir))?;
+            }
+        }
+    }
+
+    match action {
+        SkillCommands::List { category, capability } => {
+            if let Some(cat) = category {
+                let skills = registry.by_category(&cat);
+                if skills.is_empty() {
+                    println!("No skills found in category: {}", cat);
+                } else {
+                    println!("Skills in category '{}':", cat);
+                    for skill in skills {
+                        println!("  • {} v{} — {}", skill.skill_id, skill.version, skill.description);
+                    }
+                }
+            } else if let Some(cap) = capability {
+                let skills = registry.by_capability(&cap);
+                if skills.is_empty() {
+                    println!("No skills found with capability: {}", cap);
+                } else {
+                    println!("Skills with capability '{}':", cap);
+                    for skill in skills {
+                        println!("  • {} v{} — {}", skill.skill_id, skill.version, skill.description);
+                    }
+                }
+            } else {
+                let skills = registry.list_all();
+                if skills.is_empty() {
+                    println!("No skills loaded. Use 'aegis skill load <directory>' to load skills.");
+                } else {
+                    println!("Available Skills ({}):", skills.len());
+                    println!("────────────────────────────────────────────────────────────");
+                    for skill in skills {
+                        println!("  • {} v{} [{}]", skill.skill_id, skill.version, skill.category);
+                        println!("    {}", skill.description);
+                        if !skill.capabilities_required.is_empty() {
+                            let caps: Vec<String> = skill.capabilities_required.iter().map(|c| c.0.clone()).collect();
+                            println!("    Capabilities: {}", caps.join(", "));
+                        }
+                        println!("    Trust: {} | Sandbox: {}", skill.trust_level_minimum, skill.sandbox_boundary);
+                    }
+                }
+            }
+        }
+        
+        SkillCommands::Show { skill_id } => {
+            if let Some(skill) = registry.get_sync(&skill_id) {
+                println!("Skill: {}", skill.skill_id);
+                println!("────────────────────────────────────────────────────────────");
+                println!("  Name:        {}", skill.name);
+                println!("  Version:     {}", skill.version);
+                println!("  Category:    {}", skill.category);
+                println!("  Description: {}", skill.description);
+                println!("  Author:      {}", skill.author);
+                println!("  License:     {}", skill.license);
+                println!("  Trust Level: {}", skill.trust_level_minimum);
+                println!("  Sandbox:     {}", skill.sandbox_boundary);
+                println!("  Protocol:    {} ({})", skill.execution_protocol, skill.protocol_version);
+                println!("  Export:      {}", skill.export_format);
+                println!();
+                println!("  Capabilities:");
+                for cap in &skill.capabilities_required {
+                    println!("    • {}", cap);
+                }
+                println!();
+                println!("  Dependencies:");
+                if skill.dependencies.is_empty() {
+                    println!("    (none)");
+                } else {
+                    for dep in &skill.dependencies {
+                        match dep {
+                            ferris_aegis_skills::Dependency::Skill { skill, version, optional, .. } => {
+                                println!("    • Skill: {} v{} {}", skill, version, if *optional { "(optional)" } else { "" });
+                            }
+                            ferris_aegis_skills::Dependency::SystemTool { tools } => {
+                                for (tool, ver) in tools {
+                                    println!("    • Tool: {} v{}", tool, ver);
+                                }
+                            }
+                            ferris_aegis_skills::Dependency::Crate { name, version } => {
+                                println!("    • Crate: {} v{}", name, version);
+                            }
+                        }
+                    }
+                }
+                println!();
+                println!("  Resource Limits:");
+                println!("    Max File Size:     {}", skill.resource_limits.max_file_size);
+                println!("    Max Execution Time: {}", skill.resource_limits.max_execution_time);
+                println!("    Max Memory:         {}", skill.resource_limits.max_memory);
+                println!("    Max Concurrent:     {}", skill.resource_limits.max_concurrent_calls);
+                println!();
+                println!("  Policies:");
+                if skill.policies.is_empty() {
+                    println!("    (none)");
+                } else {
+                    for policy in &skill.policies {
+                        println!("    • {} [{}] — {}", policy.id, policy.effect, policy.rule);
+                    }
+                }
+            } else {
+                println!("✗ Skill not found: {}", skill_id);
+                println!("  Use 'aegis skill list' to see available skills.");
+            }
+        }
+        
+        SkillCommands::Run { skill_id, input, file, agent, session } => {
+            let skill = registry.get_sync(&skill_id).ok_or_else(|| anyhow::anyhow!("Skill not found: {}", skill_id))?;
+            
+            // Parse input
+            let input_json = if let Some(file_path) = file {
+                let content = std::fs::read_to_string(&file_path)?;
+                serde_json::from_str(&content)?
+            } else if let Some(input_str) = input {
+                serde_json::from_str(&input_str)?
+            } else {
+                serde_json::json!({})
+            };
+            
+            // Create execution context
+            let agent_id = agent.unwrap_or_else(|| "cli-agent".to_string());
+            let session_id = session.map(|s| uuid::Uuid::parse_str(&s).unwrap_or_else(|_| uuid::Uuid::new_v4())).unwrap_or_else(uuid::Uuid::new_v4);
+            
+            // Load trust kernel to get agent trust score
+            let kernel = TrustKernel::new();
+            let trust_score = kernel.get_record(&agent_id.into()).map(|r| r.score.value()).unwrap_or(0.5);
+            
+            let context = ferris_aegis_skills::ExecutionContext {
+                execution_id: uuid::Uuid::new_v4(),
+                agent_id: agent_id.clone(),
+                agent_trust_score: trust_score,
+                session_id,
+                capabilities: skill.capabilities_required.iter().cloned().collect(),
+                sandbox_boundary: skill.sandbox_boundary.clone(),
+                workspace_root: std::path::PathBuf::from("/workspace"),
+                temp_dir: std::path::PathBuf::from("/tmp"),
+                start_time: chrono::Utc::now(),
+                deadline: Some(chrono::Utc::now() + chrono::Duration::seconds(300)),
+                audit_ledger: std::sync::Arc::new(ferris_aegis_kernel::AuditLedger::new()),
+                metrics: std::sync::Arc::new(ferris_aegis_observability::CoreMetrics::new()),
+                trust_kernel: std::sync::Arc::new(tokio::sync::RwLock::new(kernel)),
+            };
+            
+            // Validate execution
+            SkillValidator::validate_execution(&skill, &context)?;
+            
+            // Execute
+            let executor = SkillExecutor::new();
+            let result = executor.execute(&skill, &context, input_json).await?;
+            
+            // Output result
+            match result.status {
+                ferris_aegis_skills::ExecutionStatus::Success => {
+                    println!("✓ Skill executed successfully");
+                }
+                ferris_aegis_skills::ExecutionStatus::Failed => {
+                    println!("✗ Skill execution failed");
+                    if let Some(err) = &result.error {
+                        println!("  Error: {}", err);
+                    }
+                }
+                ferris_aegis_skills::ExecutionStatus::Denied => {
+                    println!("✗ Skill execution denied by policy");
+                }
+                ferris_aegis_skills::ExecutionStatus::TimedOut => {
+                    println!("✗ Skill execution timed out");
+                }
+            }
+            
+            println!("  Execution ID: {}", result.execution_id);
+            println!("  Duration: {}ms", result.duration_ms);
+            if let Some(trace) = &result.trace_id {
+                println!("  Trace ID: {}", trace);
+            }
+            if let Some(output) = &result.output {
+                println!("  Output: {}", serde_json::to_string_pretty(output)?);
+            }
+        }
+        
+        SkillCommands::Load { directory, recursive } => {
+            let path = Path::new(&directory);
+            if !path.exists() {
+                return Err(anyhow::anyhow!("Directory not found: {}", directory));
+            }
+            
+            let count = if recursive {
+                registry.load_from_directory_recursive(path)?
+            } else {
+                registry.load_from_directory(path)?
+            };
+            
+            println!("✓ Loaded {} skills from {}", count, directory);
+        }
+        
+        SkillCommands::Validate { path } => {
+            let path = Path::new(&path);
+            if !path.exists() {
+                return Err(anyhow::anyhow!("File not found: {}", path.display()));
+            }
+            
+            match SkillLoader::from_file(path) {
+                Ok(skill) => {
+                    SkillValidator::validate_static(&skill)?;
+                    println!("✓ Skill is valid: {}", skill.skill_id);
+                    println!("  Name: {}", skill.name);
+                    println!("  Version: {}", skill.version);
+                    println!("  Capabilities: {}", skill.capabilities_required.len());
+                    println!("  Dependencies: {}", skill.dependencies.len());
+                }
+                Err(e) => {
+                    println!("✗ Skill validation failed: {}", e);
+                }
+            }
+        }
+        
+        SkillCommands::Sign { path, key, output } => {
+            let path = Path::new(&path);
+            let skill = SkillLoader::from_file(path)?;
+            
+            // Load private key
+            let key_content = std::fs::read_to_string(&key)?;
+            let private_key = ed25519_dalek::SigningKey::from_pkcs8_pem(&key_content)
+                .map_err(|e| anyhow::anyhow!("Invalid private key: {}", e))?;
+            
+            // Sign the skill
+            let signable = SkillValidator::get_signable_bytes(&skill);
+            let signature = private_key.sign(&signable);
+            
+            let sig_hex = hex::encode(signature.to_bytes());
+            
+            let output_path = output.unwrap_or_else(|| {
+                path.with_extension("sig").to_string_lossy().to_string()
+            });
+            
+            std::fs::write(&output_path, &sig_hex)?;
+            println!("✓ Skill signed: {}", output_path);
+            println!("  Algorithm: Ed25519");
+            println!("  Signature: {}...", &sig_hex[..16]);
+        }
+        
+        SkillCommands::Verify { path, key } => {
+            let path = Path::new(&path);
+            let skill = SkillLoader::from_file(path)?;
+            
+            // Load public key
+            let key_content = std::fs::read_to_string(&key)?;
+            let public_key = ed25519_dalek::VerifyingKey::from_public_key_pem(&key_content)
+                .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
+            
+            // Verify
+            let public_key_bytes = public_key.to_bytes();
+            SkillValidator::verify_signature(&skill, &public_key_bytes)?;
+            
+            println!("✓ Signature verified for: {}", skill.skill_id);
+            println!("  Algorithm: Ed25519");
+        }
+        
+        SkillCommands::Search { query } => {
+            let results = registry.search(&query);
+            if results.is_empty() {
+                println!("No skills found matching: {}", query);
+            } else {
+                println!("Search results for '{}' ({}):", query, results.len());
+                for skill in results {
+                    println!("  • {} v{} [{}] — {}", skill.skill_id, skill.version, skill.category, skill.description);
+                }
+            }
+        }
+    }
+    
     Ok(())
 }
