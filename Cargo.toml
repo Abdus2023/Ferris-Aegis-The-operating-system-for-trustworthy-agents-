@@ -13,6 +13,7 @@ members = [
     "crates/semantic-memory",
     "crates/a2a",
     "crates/resilience",
+    "crates/skills",
     ".",
 ]
 
@@ -59,7 +60,7 @@ clap = { version = "4", features = ["derive"] }
 glob = "0.3"
 
 # Hex encoding
-hex = "0.4"
+hex = { version = "0.4", features = [] }
 
 # Observability (Week 3)
 tracing-opentelemetry = "0.28"
@@ -115,11 +116,14 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 toml = { workspace = true }
+hex = { workspace = true }
+ed25519-dalek = { workspace = true }
 ferris-aegis-kernel = { path = "crates/kernel" }
 ferris-aegis-observability = { path = "crates/observability" }
 ferris-aegis-mcp = { path = "crates/mcp" }
 ferris-aegis-security = { path = "crates/security" }
 ferris-aegis-memory = { path = "crates/memory" }
+ferris-aegis-skills = { path = "crates/skills" }
 
 [dev-dependencies]
 ferris-aegis-observability = { path = "crates/observability" }

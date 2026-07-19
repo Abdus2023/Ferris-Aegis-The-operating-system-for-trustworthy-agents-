@@ -19,8 +19,8 @@ pub mod registry;
 pub mod types;
 pub mod validator;
 
-pub use executor::{ExecutionContext, SkillExecutor};
+pub use executor::{ExecutionContext, SkillExecutor, SkillExecutionResult, ExecutionStatus, SkillImpl};
 pub use loader::{SkillLoader, FrontmatterParser};
 pub use registry::SkillRegistry;
-pub use types::{Skill, SkillId, Capability, TrustLevelRequired};
-pub use validator::SkillValidator;
+pub use types::{Skill, SkillId, Capability, TrustLevelRequired, SkillMetadata, SkillExecutionContext};
+pub use validator::{SkillValidator, DependencyResolver};
