@@ -880,3 +880,388 @@ async fn completion_criterion_29_full_pipeline() {
     let health = SystemHealth::new();
     assert!(health.report().is_healthy());
 }
+
+// ── Phase 5.1: Durable Execution ─────────────────────────────────
+
+use ferris_aegis_durable::{
+    Checkpoint, CheckpointStore, CrashRecovery, DurableExecutor, DurableExecutorConfig,
+    InMemoryCheckpointStore, Step, StepOutcome, Workflow, WorkflowId, WorkflowStatus,
+};
+
+// □ Completion Criterion 30: StepOutcome durability — checkpoint written after each step
+#[tokio::test]
+async fn completion_criterion_30_step_outcome_durability() {
+    let store = std::sync::Arc::new(InMemoryCheckpointStore::new());
+    let executor = DurableExecutor::with_defaults(store.clone());
+
+    let workflow = Workflow::new("durability-test")
+        .add_step(Step::success("step-1", serde_json::json!({"a": 1})))
+        .add_step(Step::success("step-2", serde_json::json!({"b": 2})))
+        .add_step(Step::success("step-3", serde_json::json!({"c": 3})));
+
+    let result = executor.run(&workflow).await.unwrap();
+    assert!(result.is_completed());
+    assert_eq!(result.outcomes.len(), 3);
+
+    // Verify checkpoints were written for each step
+    let count = store.count().await.unwrap();
+    assert_eq!(count, 3, "Each step should produce a checkpoint");
+}
+
+// □ Completion Criterion 31: Crash recovery — resume from last checkpoint
+#[tokio::test]
+async fn completion_criterion_31_crash_recovery() {
+    let store = std::sync::Arc::new(InMemoryCheckpointStore::new());
+    let workflow_id = "crash-recovery-test";
+
+    // Simulate crash after step 1: manually save a checkpoint
+    let outcome = StepOutcome::success("step-1", serde_json::json!({"data": "partial"}));
+    let checkpoint = Checkpoint::new(workflow_id, "crash-recovery", 0, 3, outcome, vec![]);
+    store.save(&checkpoint).await.unwrap();
+
+    // Resume with the same workflow ID
+    let executor = DurableExecutor::with_defaults(store.clone());
+    let workflow = Workflow::with_id("crash-recovery", WorkflowId::named(workflow_id))
+        .add_step(Step::success("step-1", serde_json::json!({"data": "original"})))
+        .add_step(Step::success("step-2", serde_json::json!({"more": "data"})))
+        .add_step(Step::success("step-3", serde_json::json!({"final": true})));
+
+    let result = executor.run(&workflow).await.unwrap();
+    assert!(result.is_completed());
+    // Step 1 was recovered from checkpoint, steps 2-3 were executed
+    assert!(result.outcomes.len() >= 3);
+}
+
+// □ Completion Criterion 32: Step chaining — output of one step feeds the next
+#[tokio::test]
+async fn completion_criterion_32_step_chaining() {
+    let store = InMemoryCheckpointStore::new();
+    let executor = DurableExecutor::with_defaults(store);
+
+    let workflow = Workflow::new("chained")
+        .add_step(Step::new("generate", |_| {
+            StepOutcome::success("generate", serde_json::json!({"value": 10}))
+        }))
+        .add_step(Step::new("double", |input| {
+            let val = input.get("value").and_then(|v| v.as_u64()).unwrap_or(0);
+            StepOutcome::success("double", serde_json::json!({"value": val * 2}))
+        }))
+        .add_step(Step::new("add", |input| {
+            let val = input.get("value").and_then(|v| v.as_u64()).unwrap_or(0);
+            StepOutcome::success("add", serde_json::json!({"value": val + 22}))
+        }));
+
+    let result = executor.run(&workflow).await.unwrap();
+    assert!(result.is_completed());
+    // 10 → 20 → 42
+    assert_eq!(result.outcomes[2].output["value"], 42);
+}
+
+// □ Completion Criterion 33: Checkpoint hash verification (tamper evidence)
+#[test]
+fn completion_criterion_33_checkpoint_hash_verification() {
+    let outcome = StepOutcome::success("step-1", serde_json::json!({"secret": "data"}));
+    let checkpoint = Checkpoint::new("wf-1", "test", 0, 3, outcome, vec![]);
+    assert!(checkpoint.verify_hash(), "Original checkpoint should verify");
+
+    // Tampered checkpoint should fail verification
+    let mut tampered = checkpoint.clone();
+    tampered.step_index = 999;
+    assert!(!tampered.verify_hash(), "Tampered checkpoint should fail verification");
+}
+
+// □ Completion Criterion 34: Workflow failure stops at failing step
+#[tokio::test]
+async fn completion_criterion_34_workflow_failure_stops() {
+    let store = InMemoryCheckpointStore::new();
+    let executor = DurableExecutor::with_defaults(store);
+
+    let workflow = Workflow::new("failing-pipeline")
+        .add_step(Step::success("step-1", serde_json::json!("ok")))
+        .add_step(Step::failure("step-2", "intentional failure"))
+        .add_step(Step::success("step-3", serde_json::json!("should not reach")));
+
+    let result = executor.run(&workflow).await.unwrap();
+    assert!(result.is_failed());
+    assert_eq!(result.steps_completed, 1, "Only step 0 completed before failure");
+    assert_eq!(result.outcomes.len(), 2);
+}
+
+// □ Completion Criterion 35: CrashRecovery finds incomplete workflows
+#[tokio::test]
+async fn completion_criterion_35_crash_recovery_scan() {
+    let store = InMemoryCheckpointStore::new();
+
+    // Complete workflow
+    let outcome_complete = StepOutcome::success("step-3", serde_json::json!("done"));
+    let cp_complete = Checkpoint::new("wf-complete", "complete", 2, 3, outcome_complete, vec![]);
+    store.save(&cp_complete).await.unwrap();
+
+    // Incomplete workflow
+    let outcome_partial = StepOutcome::success("step-1", serde_json::json!(1));
+    let cp_partial = Checkpoint::new("wf-incomplete", "incomplete", 0, 3, outcome_partial, vec![]);
+    store.save(&cp_partial).await.unwrap();
+
+    let recovery = CrashRecovery::new(store);
+    let result = recovery.scan().await.unwrap();
+    assert_eq!(result.found, 1, "Should find exactly one incomplete workflow");
+    assert_eq!(result.recovered, 1);
+    assert_eq!(result.details[0].workflow_id, "wf-incomplete");
+    assert_eq!(result.details[0].resume_from_step, 1);
+}
+
+// □ Completion Criterion 36: Step retry on transient failure
+#[tokio::test]
+async fn completion_criterion_36_step_retry() {
+    let store = InMemoryCheckpointStore::new();
+    let config = DurableExecutorConfig {
+        max_step_retries: 3,
+        ..Default::default()
+    };
+    let executor = DurableExecutor::new(store, config);
+
+    let attempts = std::sync::Arc::new(std::sync::Mutex::new(0));
+    let attempts_clone = attempts.clone();
+
+    let workflow = Workflow::new("retry-test").add_step(Step::new("flaky", move |_| {
+        let mut count = attempts_clone.lock().unwrap();
+        *count += 1;
+        if *count < 3 {
+            StepOutcome::failure("flaky", "transient error")
+        } else {
+            StepOutcome::success("flaky", serde_json::json!("recovered"))
+        }
+    }));
+
+    let result = executor.run(&workflow).await.unwrap();
+    assert!(result.is_completed());
+    let final_count = *attempts.lock().unwrap();
+    assert!(final_count >= 3, "Should have retried until success");
+}
+
+// □ Completion Criterion 37: Empty workflow rejected
+#[tokio::test]
+async fn completion_criterion_37_empty_workflow_rejected() {
+    let store = InMemoryCheckpointStore::new();
+    let executor = DurableExecutor::with_defaults(store);
+
+    let workflow = Workflow::new("empty");
+    let result = executor.run(&workflow).await;
+    assert!(result.is_err(), "Empty workflow should be rejected");
+}
+
+// □ Completion Criterion 38: StepOutcome serialization roundtrip
+#[test]
+fn completion_criterion_38_step_outcome_serialization() {
+    let outcome = StepOutcome::success("step-1", serde_json::json!({"result": 42}));
+    let json = serde_json::to_string(&outcome).unwrap();
+    let deserialized: StepOutcome = serde_json::from_str(&json).unwrap();
+    assert_eq!(outcome.step_name, deserialized.step_name);
+    assert_eq!(outcome.success, deserialized.success);
+    assert_eq!(outcome.output, deserialized.output);
+    assert!(outcome.error.is_none());
+}
+
+// ── End-to-End: All phases including 5.1 ─────────────────────────
+
+/// Full pipeline including durable execution
+#[tokio::test]
+async fn completion_criterion_39_full_pipeline_with_durable() {
+    // Phase 5: Config validation
+    let config = AegisConfig::default_config();
+    assert!(config.validate().is_ok());
+
+    // Phase 1: Trust + Agent
+    let mut kernel = TrustKernel::new()
+        .with_initial_score(config.trust.initial_score)
+        .with_decay_factor(config.trust.decay_factor);
+    let agent_id = AgentId::new("pipeline-test");
+    kernel.register(&agent_id);
+    kernel.reinforce(&agent_id, 0.5);
+
+    // Phase 3: Security
+    let allowlist = ToolAllowlist::default_safe();
+    assert_eq!(allowlist.check("file_read"), AllowlistVerdict::Allowed);
+
+    // Phase 4: Session
+    let mut session = Session::new(&agent_id.to_string(), "pipeline-test");
+    session.advance_turn();
+    assert_eq!(session.turn, 1);
+
+    // Phase 5: Resilience
+    let mut cb = CircuitBreaker::with_defaults();
+    assert!(cb.allow_request());
+
+    // Phase 5.1: Durable Execution
+    let store = InMemoryCheckpointStore::new();
+    let executor = DurableExecutor::with_defaults(store);
+
+    let workflow = Workflow::new("full-pipeline")
+        .add_step(Step::success("validate", serde_json::json!({"valid": true})))
+        .add_step(Step::success("execute", serde_json::json!({"done": true})));
+
+    let result = executor.run(&workflow).await.unwrap();
+    assert!(result.is_completed());
+
+    // Health
+    let health = SystemHealth::new();
+    assert!(health.report().is_healthy());
+}
+
+// ── Phase 5.2: Agent Skills ─────────────────────────────────────
+
+use ferris_aegis_skills::{
+    SkillFrontmatter, SkillIndex, SkillMetadata, SkillRegistry, SkillRegistryConfig,
+    SkillValidator,
+};
+
+// □ Completion Criterion 40: Skill frontmatter parsing
+#[test]
+fn completion_criterion_40_skill_frontmatter_parsing() {
+    let content = r#"---
+name: aegis-trust-kernel
+description: Manages trust scores. Use when the user mentions trust score.
+license: "MIT OR Apache-2.0"
+metadata:
+  aegis-crate: "ferris-aegis-kernel"
+  aegis-phase: "1"
+  version: "0.4.0"
+  tags: "trust kernel audit"
+allowed-tools: Bash(cargo:*) Read
+---
+# Instructions"#;
+
+    let fm = SkillRegistry::parse_frontmatter(content).unwrap();
+    assert_eq!(fm.name, "aegis-trust-kernel");
+    assert_eq!(fm.aegis_crate(), Some("ferris-aegis-kernel"));
+    assert_eq!(fm.aegis_phase(), Some("1"));
+    assert_eq!(fm.version(), Some("0.4.0"));
+    assert_eq!(fm.tags(), vec!["trust", "kernel", "audit"]);
+    assert_eq!(fm.allowed_tools_list(), vec!["Bash(cargo:*)", "Read"]);
+}
+
+// □ Completion Criterion 41: Skill validation — valid skill passes
+#[test]
+fn completion_criterion_41_skill_validation_valid() {
+    let path = std::path::Path::new("/skills/aegis-trust-kernel");
+    let fm = SkillFrontmatter {
+        name: "aegis-trust-kernel".to_string(),
+        description: "Manages trust scores. Use when the user mentions trust.".to_string(),
+        license: Some("MIT OR Apache-2.0".to_string()),
+        compatibility: None,
+        metadata: None,
+        allowed_tools: None,
+    };
+
+    let result = SkillValidator::validate(path, &fm);
+    assert!(result.is_valid(), "Valid skill should pass validation");
+    assert!(result.errors.is_empty());
+}
+
+// □ Completion Criterion 42: Skill validation — invalid name fails
+#[test]
+fn completion_criterion_42_skill_validation_invalid_name() {
+    let path = std::path::Path::new("/skills/INVALID_NAME");
+    let fm = SkillFrontmatter {
+        name: "INVALID_NAME".to_string(),
+        description: "A skill. Use when testing.".to_string(),
+        license: None,
+        compatibility: None,
+        metadata: None,
+        allowed_tools: None,
+    };
+
+    let result = SkillValidator::validate(path, &fm);
+    assert!(!result.is_valid(), "Invalid name should fail validation");
+    assert!(result.errors.iter().any(|e| e.rule == "name-format"));
+}
+
+// □ Completion Criterion 43: Skill discovery index generation
+#[test]
+fn completion_criterion_43_skill_discovery_index() {
+    let mut index = SkillIndex::new();
+    assert_eq!(index.skills.len(), 0);
+
+    let metadata = SkillMetadata {
+        name: "aegis-durable-workflow".to_string(),
+        description: "Creates durable workflows. Use when the user says durable.".to_string(),
+        path: std::path::PathBuf::from(".agents/skills/aegis-durable-workflow"),
+        digest: "abc123def456".to_string(),
+        frontmatter: SkillFrontmatter {
+            name: "aegis-durable-workflow".to_string(),
+            description: "Creates durable workflows. Use when the user says durable.".to_string(),
+            license: None,
+            compatibility: None,
+            metadata: None,
+            allowed_tools: None,
+        },
+    };
+
+    index.add_skill(&metadata);
+    assert_eq!(index.skills.len(), 1);
+    assert_eq!(index.skills[0].name, "aegis-durable-workflow");
+    assert_eq!(index.skills[0].entry_type, "skill-md");
+    assert_eq!(index.skills[0].url, "/.well-known/agent-skills/aegis-durable-workflow/SKILL.md");
+
+    let json = index.to_json().unwrap();
+    assert!(json.contains("\"$schema\""));
+    assert!(json.contains("aegis-durable-workflow"));
+}
+
+// □ Completion Criterion 44: Skill digest integrity
+#[test]
+fn completion_criterion_44_skill_digest_integrity() {
+    let content = b"---\nname: test\ndescription: test\n---\n# Body";
+    let d1 = SkillMetadata::compute_digest(content);
+    let d2 = SkillMetadata::compute_digest(content);
+    assert_eq!(d1, d2, "Same content should produce same digest");
+
+    let d3 = SkillMetadata::compute_digest(b"different content");
+    assert_ne!(d1, d3, "Different content should produce different digest");
+}
+
+// □ Completion Criterion 45: Skill name-directory mismatch detected
+#[test]
+fn completion_criterion_45_skill_name_directory_mismatch() {
+    let path = std::path::Path::new("/skills/wrong-directory");
+    let fm = SkillFrontmatter {
+        name: "different-name".to_string(),
+        description: "A skill. Use when testing.".to_string(),
+        license: None,
+        compatibility: None,
+        metadata: None,
+        allowed_tools: None,
+    };
+
+    let result = SkillValidator::validate(path, &fm);
+    assert!(!result.is_valid());
+    assert!(result.errors.iter().any(|e| e.rule == "name-matches-directory"));
+}
+
+// □ Completion Criterion 46: Skill body extraction
+#[test]
+fn completion_criterion_46_skill_body_extraction() {
+    let content = "---\nname: test-skill\ndescription: A test\n---\n# Heading\n\nStep 1: Do thing.";
+    let body = SkillRegistry::extract_body(content).unwrap();
+    assert!(body.contains("# Heading"));
+    assert!(body.contains("Step 1"));
+    assert!(!body.contains("name: test-skill"));
+}
+
+// □ Completion Criterion 47: Skill validation warns on missing "Use when"
+#[test]
+fn completion_criterion_47_skill_validation_use_when_warning() {
+    let path = std::path::Path::new("/skills/test-skill");
+    let fm = SkillFrontmatter {
+        name: "test-skill".to_string(),
+        description: "Does something cool.".to_string(), // No "Use when"
+        license: None,
+        compatibility: None,
+        metadata: None,
+        allowed_tools: None,
+    };
+
+    let result = SkillValidator::validate(path, &fm);
+    assert!(result.is_valid(), "Should still be valid");
+    assert!(!result.warnings.is_empty(), "Should have warning about missing 'Use when'");
+}

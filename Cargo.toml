@@ -13,11 +13,13 @@ members = [
     "crates/semantic-memory",
     "crates/a2a",
     "crates/resilience",
+    "crates/durable",
+    "crates/skills",
     ".",
 ]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT OR Apache-2.0"
@@ -89,6 +91,9 @@ sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"] }
 # Async trait (Phase 5 resilience)
 async-trait = "0.1"
 
+# YAML parsing (Phase 5.2 skills)
+serde_yaml = "0.9"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unused_must_use = "deny"
@@ -120,6 +125,8 @@ ferris-aegis-observability = { path = "crates/observability" }
 ferris-aegis-mcp = { path = "crates/mcp" }
 ferris-aegis-security = { path = "crates/security" }
 ferris-aegis-memory = { path = "crates/memory" }
+ferris-aegis-durable = { path = "crates/durable" }
+ferris-aegis-skills = { path = "crates/skills" }
 
 [dev-dependencies]
 ferris-aegis-observability = { path = "crates/observability" }
@@ -132,6 +139,8 @@ ferris-aegis-supervisor = { path = "crates/supervisor" }
 ferris-aegis-semantic-memory = { path = "crates/semantic-memory" }
 ferris-aegis-a2a = { path = "crates/a2a" }
 ferris-aegis-resilience = { path = "crates/resilience" }
+ferris-aegis-durable = { path = "crates/durable" }
+ferris-aegis-skills = { path = "crates/skills" }
 
 [lints]
 workspace = true

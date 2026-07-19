@@ -1,0 +1,48 @@
+[policy]
+name = ""
+version = "1.0.0"
+priority = 100
+enabled = true
+default_effect = "deny"
+
+# ── Filesystem Rules ──────────────────────────────────────────────
+
+[[rules]]
+action = "file:read"
+effect = "allow"
+targets = ["/workspace/*"]
+description = "Allow reads from workspace directory"
+
+[[rules]]
+action = "file:write"
+effect = "deny"
+targets = ["/etc/*", "/var/*", "/sys/*", "/proc/*"]
+description = "Deny writes to system directories"
+
+[[rules]]
+action = "file:write"
+effect = "allow"
+targets = ["/workspace/output/*"]
+description = "Allow writes to workspace output directory"
+
+# ── Network Rules ─────────────────────────────────────────────────
+
+[[rules]]
+action = "network:connect"
+effect = "deny"
+targets = ["10.*", "172.16.*", "192.168.*", "127.0.0.1:*"]
+description = "Deny connections to internal/private networks"
+
+[[rules]]
+action = "network:connect"
+effect = "allow"
+targets = []
+description = "Allow connections to approved endpoints"
+
+# ── Execution Rules ───────────────────────────────────────────────
+
+[[rules]]
+action = "exec:*"
+effect = "deny"
+targets = []
+description = "Deny arbitrary code execution by default"
