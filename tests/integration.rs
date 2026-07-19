@@ -303,3 +303,264 @@ async fn test_memory_and_security_together() {
     let recent = memory.recent("agent-1", 10).await.unwrap();
     assert_eq!(recent.len(), 2);
 }
+
+// ── Phase 4: Session + Supervisor + Semantic Memory + A2A ──────────
+
+use ferris_aegis_session::{Session, SessionManager};
+use ferris_aegis_supervisor::{Supervisor, SupervisorConfig, Severity, FindingType, Recommendation};
+use ferris_aegis_semantic_memory::SemanticMemory;
+use ferris_aegis_a2a::{
+    AgentCard, A2aMessage, A2aEnvelope, A2aRouter,
+    MessageType, TrustLevel as A2aTrustLevel, Attestation,
+    A2A_PROTOCOL_VERSION,
+};
+
+// □ Completion Criterion 9: Session creation, clone, and lifecycle
+#[test]
+fn completion_criterion_9_session_lifecycle() {
+    let mut session = Session::new("agent-1", "research");
+    assert_eq!(session.agent_id, "agent-1");
+    assert_eq!(session.context, "research");
+    assert_eq!(session.turn, 0);
+    assert!(session.active);
+
+    // Clone is derived (critical compile fix)
+    let cloned = session.clone();
+    assert_eq!(cloned.id, session.id);
+
+    // Turns advance correctly
+    session.advance_turn();
+    assert_eq!(session.turn, 1);
+    session.advance_turn();
+    assert_eq!(session.turn, 2);
+
+    // Deactivate/activate
+    session.deactivate();
+    assert!(!session.active);
+    session.activate();
+    assert!(session.active);
+
+    // JSON round-trip
+    let json = serde_json::to_string(&session).unwrap();
+    let restored: Session = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored.id, session.id);
+    assert_eq!(restored.turn, 2);
+}
+
+// □ Completion Criterion 10: Session manager tracks multiple sessions
+#[test]
+fn completion_criterion_10_session_manager() {
+    let mut manager = SessionManager::new();
+    let s1 = manager.create_session("agent-1", "coding");
+    let s2 = manager.create_session("agent-1", "debugging");
+    let s3 = manager.create_session("agent-2", "research");
+
+    assert_eq!(manager.active_count(), 3);
+    assert_eq!(manager.active_sessions_for("agent-1").len(), 2);
+    assert_eq!(manager.active_sessions_for("agent-2").len(), 1);
+
+    manager.deactivate_agent_sessions("agent-1");
+    assert_eq!(manager.active_sessions_for("agent-1").len(), 0);
+    assert_eq!(manager.active_count(), 1);
+
+    // Remove a session
+    assert!(manager.get_session(&s1.id).is_some());
+    manager.remove_session(&s1.id);
+    assert!(manager.get_session(&s1.id).is_none());
+}
+
+// □ Completion Criterion 11: Supervisor detects rate anomalies
+#[test]
+fn completion_criterion_11_supervisor_rate_anomaly() {
+    let config = SupervisorConfig {
+        max_turns_per_minute: 3,
+        ..Default::default()
+    };
+    let mut supervisor = Supervisor::new(config);
+    let session = Session::new("agent-1", "test");
+
+    // Simulate rapid turns
+    for _ in 0..5 {
+        supervisor.inspect(&session);
+    }
+
+    let findings = supervisor.inspect(&session);
+    let rate_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.finding_type == FindingType::RateAnomaly)
+        .collect();
+    assert!(!rate_findings.is_empty(), "Supervisor should detect rate anomaly");
+    assert!(rate_findings[0].severity >= Severity::Warning);
+}
+
+// □ Completion Criterion 12: Supervisor recommends quarantine on critical trust decay
+#[test]
+fn completion_criterion_12_supervisor_trust_decay_recommendation() {
+    let supervisor = Supervisor::with_defaults();
+    use ferris_aegis_supervisor::Finding;
+
+    let finding = Finding {
+        id: "test-id".to_string(),
+        session_id: "s1".to_string(),
+        agent_id: "a1".to_string(),
+        finding_type: FindingType::TrustDecay,
+        severity: Severity::Critical,
+        description: "Trust critically low".to_string(),
+        timestamp: chrono::Utc::now(),
+    };
+
+    assert_eq!(
+        supervisor.recommend(&finding),
+        Recommendation::QuarantineAgent
+    );
+}
+
+// □ Completion Criterion 13: Semantic memory stores/retrieves concepts and embeddings
+#[tokio::test]
+async fn completion_criterion_13_semantic_memory() {
+    let memory = SemanticMemory::open_in_memory().await.unwrap();
+
+    // Store a concept
+    let concept = ferris_aegis_semantic_memory::Concept {
+        id: uuid::Uuid::new_v4().to_string(),
+        agent_id: "agent-1".to_string(),
+        episode_id: None,
+        name: "rust".to_string(),
+        description: "Rust programming language".to_string(),
+        labels: vec!["programming".to_string()],
+        confidence: 0.95,
+        created_at: chrono::Utc::now(),
+    };
+    memory.store_concept(&concept).await.unwrap();
+
+    // Search concepts
+    let results = memory.search_concepts("agent-1", "programming").await.unwrap();
+    assert_eq!(results.len(), 1);
+
+    // Store an embedding
+    let embedding = ferris_aegis_semantic_memory::StoredEmbedding {
+        id: uuid::Uuid::new_v4().to_string(),
+        episode_id: "ep-1".to_string(),
+        agent_id: "agent-1".to_string(),
+        vector: vec![0.1, 0.2, 0.3],
+        model: "test-model".to_string(),
+        dimensions: 3,
+        created_at: chrono::Utc::now(),
+    };
+    memory.store_embedding(&embedding).await.unwrap();
+
+    let retrieved = memory.get_embedding("ep-1").await.unwrap().unwrap();
+    assert_eq!(retrieved.vector.len(), 3);
+
+    // Cosine similarity
+    let sim = SemanticMemory::cosine_similarity(&[1.0, 0.0], &[1.0, 0.0]);
+    assert!((sim - 1.0).abs() < 0.001);
+}
+
+// □ Completion Criterion 14: A2A AgentCard with JSON Schema generation
+#[test]
+fn completion_criterion_14_a2a_agent_card() {
+    let card = AgentCard::new("test-agent", "1.0.0", "A test agent")
+        .with_trust(A2aTrustLevel::Standard, 0.7)
+        .with_capability("file_read")
+        .with_transport("http")
+        .with_endpoint("https://agent.example.com/a2a");
+
+    assert_eq!(card.name, "test-agent");
+    assert_eq!(card.trust_level, A2aTrustLevel::Standard);
+    assert!(card.is_compatible_with(A2A_PROTOCOL_VERSION));
+    assert!(!card.is_compatible_with("0.2.0"));
+
+    // JSON Schema generation via schemars
+    let schema = AgentCard::json_schema();
+    assert!(schema.is_object());
+}
+
+// □ Completion Criterion 15: A2A router routes messages with trust verification
+#[test]
+fn completion_criterion_15_a2a_routing() {
+    let mut router = A2aRouter::new();
+
+    // Register two agents
+    let sender = AgentCard::new("agent-a", "1.0.0", "Sender")
+        .with_trust(A2aTrustLevel::Standard, 0.7)
+        .with_capability("file_read")
+        .with_transport("http");
+
+    let recipient = AgentCard::new("agent-b", "1.0.0", "Recipient")
+        .with_trust(A2aTrustLevel::Standard, 0.6)
+        .with_capability("file_read")
+        .with_transport("http");
+
+    router.register(sender.clone());
+    router.register(recipient.clone());
+
+    assert_eq!(router.agent_count(), 2);
+
+    // Route a valid message
+    let msg = A2aMessage::new(
+        "agent-a",
+        "agent-b",
+        MessageType::Request,
+        serde_json::json!({"action": "greet"}),
+    );
+    let envelope = A2aEnvelope::new(msg).with_sender_card(sender);
+    let result = router.route_message(&envelope);
+    assert!(result.is_ok());
+
+    // Route to nonexistent recipient fails
+    let bad_msg = A2aMessage::new(
+        "agent-a",
+        "nonexistent",
+        MessageType::Request,
+        serde_json::json!({}),
+    );
+    let bad_envelope = A2aEnvelope::new(bad_msg);
+    assert!(router.route_message(&bad_envelope).is_err());
+}
+
+// □ Completion Criterion 16: A2A trust level prevents low-trust agents from initiating
+#[test]
+fn completion_criterion_16_a2a_trust_gating() {
+    assert!(!A2aTrustLevel::Unverified.can_initiate());
+    assert!(!A2aTrustLevel::Probationary.can_initiate());
+    assert!(A2aTrustLevel::Standard.can_initiate());
+    assert!(A2aTrustLevel::Elevated.can_initiate());
+    assert!(A2aTrustLevel::Sovereign.can_initiate());
+}
+
+// □ Completion Criterion 17: A2A messages serialize/deserialize correctly
+#[test]
+fn completion_criterion_17_a2a_serialization() {
+    let msg = A2aMessage::new(
+        "agent-a",
+        "agent-b",
+        MessageType::Request,
+        serde_json::json!({"task": "compute"}),
+    )
+    .with_session("session-1")
+    .with_required_trust(A2aTrustLevel::Standard);
+
+    let envelope = A2aEnvelope::new(msg);
+    let json = serde_json::to_string(&envelope).unwrap();
+    let deserialized: A2aEnvelope = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(deserialized.message.sender, "agent-a");
+    assert_eq!(deserialized.message.recipient, "agent-b");
+    assert_eq!(deserialized.message.message_type, MessageType::Request);
+    assert_eq!(deserialized.message.session_id.as_deref(), Some("session-1"));
+}
+
+// □ Completion Criterion 18: ProtectedSecret newtype works structurally
+#[test]
+fn completion_criterion_18_protected_secret() {
+    use ferris_aegis_security::ProtectedSecret;
+
+    let secret = ProtectedSecret::new("sk-api-key-12345");
+    assert_eq!(secret.expose_secret(), "sk-api-key-12345");
+
+    // Debug output must NOT expose the secret
+    let debug_str = format!("{:?}", secret);
+    assert!(!debug_str.contains("sk-api-key-12345"));
+    assert!(debug_str.contains("ProtectedSecret"));
+}

@@ -8,6 +8,10 @@ members = [
     "crates/sandbox-wasm",
     "crates/memory",
     "crates/plugin",
+    "crates/session",
+    "crates/supervisor",
+    "crates/semantic-memory",
+    "crates/a2a",
     ".",
 ]
 
@@ -21,7 +25,7 @@ repository = "https://github.com/Abdus2023/Ferris-Aegis-The-operating-system-for
 
 [workspace.dependencies]
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.51", features = ["full"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -119,6 +123,10 @@ ferris-aegis-security = { path = "crates/security" }
 ferris-aegis-sandbox-wasm = { path = "crates/sandbox-wasm" }
 ferris-aegis-memory = { path = "crates/memory" }
 ferris-aegis-plugin = { path = "crates/plugin" }
+ferris-aegis-session = { path = "crates/session" }
+ferris-aegis-supervisor = { path = "crates/supervisor" }
+ferris-aegis-semantic-memory = { path = "crates/semantic-memory" }
+ferris-aegis-a2a = { path = "crates/a2a" }
 
 [lints]
 workspace = true

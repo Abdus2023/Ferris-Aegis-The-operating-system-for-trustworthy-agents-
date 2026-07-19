@@ -15,9 +15,9 @@
 //! - Tool-call tracing spans are populated from `call.arguments` only —
 //!   never from a post-injection copy that could carry `credential`.
 
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
+use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Aes256Gcm as Cipher, Nonce};
-use secrecy::{ExposeSecret, Secret, SecretString};
+use secrecy::{ExposeSecret, SecretBox, SecretString};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -44,7 +44,7 @@ pub struct StoredCredential {
 /// is held in a `Secret<String>` and zeroized on drop.
 pub struct CredentialVault {
     /// The derived encryption key (32 bytes for AES-256).
-    key: Secret<[u8; 32]>,
+    key: SecretBox<[u8; 32]>,
     /// Stored credentials indexed by name.
     credentials: Vec<StoredCredential>,
 }
@@ -61,7 +61,7 @@ impl CredentialVault {
         let key_bytes: [u8; 32] = hasher.finalize().into();
 
         Self {
-            key: Secret::new(key_bytes),
+            key: SecretBox::new(Box::new(key_bytes)),
             credentials: Vec::new(),
         }
     }
@@ -74,17 +74,16 @@ impl CredentialVault {
         let cipher = Aes256Gcm::new_from_slice(self.key.expose_secret())
             .map_err(|e| anyhow::anyhow!("failed to create cipher: {e}"))?;
 
-        let nonce_bytes = aes_gcm::aead::rand_nonce::generate_nonce(&mut OsRng);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
         let encrypted = cipher
-            .encrypt(nonce, secret.expose_secret().as_bytes())
+            .encrypt(&nonce, secret.expose_secret().as_bytes())
             .map_err(|e| anyhow::anyhow!("encryption failed: {e}"))?;
 
         self.credentials.push(StoredCredential {
             name: name.to_string(),
             encrypted,
-            nonce: nonce_bytes.to_vec(),
+            nonce: nonce.to_vec(),
             created_at: chrono::Utc::now(),
             expires_at: None,
         });
@@ -199,6 +198,51 @@ impl ToolCall {
             call: self,
             credential: None,
         }
+    }
+}
+
+/// A structurally-protected secret credential.
+///
+/// This is a newtype over `SecretString` that provides an additional layer
+/// of type safety for API keys, tokens, and other credentials. Unlike a
+/// raw `SecretString`, `ProtectedSecret` cannot be accidentally mixed with
+/// other string types and carries explicit intent in the type system.
+///
+/// # Safety
+///
+/// - Never implements `Debug` or `Display` in a way that exposes the secret.
+/// - The inner `SecretString` is zeroized on drop.
+/// - Access via `.expose_secret()` is structurally obvious at the call site.
+#[derive(Clone)]
+pub struct ProtectedSecret(SecretString);
+
+impl ProtectedSecret {
+    /// Create a new protected secret from a string value.
+    pub fn new(secret: impl Into<String>) -> Self {
+        Self(SecretString::new(secret.into()))
+    }
+
+    /// Expose the inner secret.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure the exposed value is not logged, serialized,
+    /// or sent to LLM context. This should only be called at the point
+    /// of actual use (e.g. building an HTTP authorization header).
+    pub fn expose_secret(&self) -> &str {
+        self.0.expose_secret()
+    }
+
+    /// Get a reference to the inner `SecretString`.
+    pub fn inner(&self) -> &SecretString {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for ProtectedSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProtectedSecret")
+            .finish_non_exhaustive()
     }
 }
 

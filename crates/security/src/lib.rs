@@ -31,4 +31,4 @@ pub mod vault;
 pub use allowlist::{ToolAllowlist, AllowlistVerdict};
 pub use injection::{InjectionScanner, InjectionVerdict};
 pub use ssrf::{SsrfGuard, SsrfVerdict};
-pub use vault::{CredentialVault, AuthenticatedCall, StoredCredential};
+pub use vault::{CredentialVault, AuthenticatedCall, StoredCredential, ProtectedSecret};
