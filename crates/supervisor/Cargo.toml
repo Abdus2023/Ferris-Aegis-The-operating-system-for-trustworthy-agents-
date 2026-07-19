@@ -1,0 +1,21 @@
+[package]
+name = "ferris-aegis-supervisor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ferris Aegis — Actor supervision with ractor (Phase 4.4)"
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+ractor = { workspace = true }
+ferris-aegis-session = { path = "../session" }
+
+[lints]
+workspace = true

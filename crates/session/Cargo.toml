@@ -1,0 +1,20 @@
+[package]
+name = "ferris-aegis-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ferris Aegis — Session manager with four-field budget tracking (Phase 4.2)"
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tokio-util = { workspace = true }
+
+[lints]
+workspace = true
