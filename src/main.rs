@@ -17,6 +17,7 @@ use ferris_aegis_kernel::{
 };
 use ferris_aegis_skills::{SkillRegistry, SkillLoader, SkillExecutor, SkillValidator};
 use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "aegis")]
@@ -405,10 +406,32 @@ async fn start_daemon(foreground: bool) -> anyhow::Result<()> {
 
 async fn run_mcp_server() -> anyhow::Result<()> {
     let handle = ferris_aegis_observability::init().await?;
-    tracing::info!("Starting MCP stdio server");
+    tracing::info!("Starting MCP stdio server with skills");
 
     let metrics = handle.metrics.clone();
-    ferris_aegis_mcp::serve(metrics).await?;
+    
+    // Load skills and create skill handler
+    let mut registry = SkillRegistry::new();
+    for dir in ["./skills", "./skills/examples", "/etc/ferris-aegis/skills"] {
+        if Path::new(dir).exists() {
+            registry.load_from_directory_recursive(Path::new(dir))?;
+        }
+    }
+    
+    let executor = Arc::new(SkillExecutor::new());
+    let audit_ledger = Arc::new(ferris_aegis_kernel::AuditLedger::new());
+    let trust_kernel = Arc::new(tokio::sync::RwLock::new(ferris_aegis_kernel::TrustKernel::new()));
+    let registry_arc = Arc::new(tokio::sync::RwLock::new(registry));
+    
+    let skill_handler = Arc::new(ferris_aegis_skills::SkillMcpHandler::new(
+        executor,
+        registry_arc,
+        metrics.clone(),
+        audit_ledger,
+        trust_kernel,
+    ));
+    
+    ferris_aegis_mcp::serve_with_skills(metrics, skill_handler).await?;
 
     handle.shutdown();
     Ok(())

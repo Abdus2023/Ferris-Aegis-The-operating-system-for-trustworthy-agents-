@@ -4,8 +4,9 @@
 //! server, and is also used by the library's `serve()` function.
 
 use ferris_aegis_observability::CoreMetrics;
-
+use ferris_aegis_skills::SkillMcpHandler;
 use crate::AegisMcpServer;
+use std::sync::Arc;
 
 /// Run the MCP server with the given metrics handle and stdio transport.
 ///
@@ -13,7 +14,19 @@ use crate::AegisMcpServer;
 /// or a fatal error occurs.
 pub async fn run_server(metrics: CoreMetrics) -> anyhow::Result<()> {
     let server = AegisMcpServer::new(metrics);
+    run_server_inner(server).await
+}
 
+/// Run the MCP server with skill support.
+pub async fn run_server_with_skills(
+    metrics: CoreMetrics,
+    skill_handler: Arc<SkillMcpHandler>,
+) -> anyhow::Result<()> {
+    let server = AegisMcpServer::with_skills(metrics, skill_handler);
+    run_server_inner(server).await
+}
+
+async fn run_server_inner(server: AegisMcpServer) -> anyhow::Result<()> {
     let service = server
         .serve(rmcp::transport::stdio())
         .await

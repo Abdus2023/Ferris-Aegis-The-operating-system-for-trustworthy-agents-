@@ -15,3 +15,4 @@ serde_json = { workspace = true }
 schemars = { workspace = true }
 rmcp = { workspace = true }
 ferris-aegis-observability = { path = "../observability" }
+ferris-aegis-skills = { path = "../skills" }

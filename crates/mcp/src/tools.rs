@@ -1,27 +1,24 @@
 //! MCP tool definitions for Ferris Aegis.
 //!
-//! Each tool is:
-//! - Declared with `#[tool]` for automatic schema generation
-//! - Instrumented with a `tracing` span at the handler level
-//! - Wired to increment `CoreMetrics` counters on success/failure
-//! - Returns structured `CallToolResult` compatible with MCP spec
+//! This module provides both static tools (file_read) and dynamic tools
+//! generated from SKILL.md specifications. Dynamic tools are registered
+//! at runtime via the SkillMcpHandler.
 
 use ferris_aegis_observability::CoreMetrics;
+use ferris_aegis_skills::{McpToolDefinition, McpToolGenerator, SkillMcpHandler};
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content, ServerInfo, ServerCapabilities, Implementation, ProtocolVersion};
+use rmcp::model::{CallToolResult, Content, ServerInfo, ServerCapabilities, Implementation, ProtocolVersion, Tool};
 use rmcp::{tool, tool_handler, tool_router, ServerHandler, ErrorData as McpError};
 use schemars::JsonSchema;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::Instrument;
 
 /// Parameters for the `file_read` tool.
-///
-/// The `#[derive(JsonSchema)]` generates the MCP input schema
-/// automatically. Field-level `#[schemars(description = "...")]`
-/// attributes become the schema's property descriptions visible
-/// to the LLM client.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct FileReadParams {
     /// Absolute path to the file to read.
@@ -34,16 +31,6 @@ pub struct FileReadParams {
 }
 
 /// Read a file from the local filesystem.
-///
-/// This tool reads the contents of a file at the given path and returns
-/// it as text content. Binary files are returned as base64-encoded
-/// content.
-///
-/// # Security
-///
-/// Only absolute paths are accepted. Paths attempting directory traversal
-/// (`..`) are rejected. The file must exist and be readable by the
-/// current process.
 pub fn read_file_inner(path: &str, max_bytes: usize) -> Result<String, String> {
     let path = Path::new(path);
 
@@ -57,11 +44,7 @@ pub fn read_file_inner(path: &str, max_bytes: usize) -> Result<String, String> {
         .canonicalize()
         .map_err(|e| format!("Cannot resolve path: {e}"))?;
 
-    // Security: ensure the canonical path doesn't escape via symlinks
-    // (canonicalize resolves symlinks, so comparing works)
-    if canonical.components().any(|c| {
-        matches!(c, std::path::Component::ParentDir)
-    }) {
+    if canonical.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
         return Err("Directory traversal not allowed".to_string());
     }
 
@@ -79,13 +62,8 @@ pub fn read_file_inner(path: &str, max_bytes: usize) -> Result<String, String> {
         .map_err(|e| format!("Failed to read file: {e}"))?;
 
     let truncated = content.len() > bytes_to_read;
-    let content = if truncated {
-        &content[..bytes_to_read]
-    } else {
-        &content
-    };
+    let content = if truncated { &content[..bytes_to_read] } else { &content };
 
-    // Try to decode as UTF-8 text; fall back to lossy representation
     let text = String::from_utf8_lossy(content).to_string();
 
     let mut result = text;
@@ -99,17 +77,55 @@ pub fn read_file_inner(path: &str, max_bytes: usize) -> Result<String, String> {
     Ok(result)
 }
 
-/// The Ferris Aegis MCP server.
-///
-/// Implements `ServerHandler` via the `#[tool_handler]` macro, which
-/// generates the `call_tool` and `list_tools` dispatch methods from
-/// the `#[tool_router]` decorated impl block.
+/// Dynamic tool handler for skills
+struct DynamicSkillHandler {
+    skill_handler: Arc<SkillMcpHandler>,
+    tool_schemas: HashMap<String, Tool>,
+}
+
+impl DynamicSkillHandler {
+    fn new(skill_handler: Arc<SkillMcpHandler>) -> Self {
+        Self {
+            skill_handler,
+            tool_schemas: HashMap::new(),
+        }
+    }
+
+    async fn refresh_tools(&mut self) {
+        let tools = self.skill_handler.list_tools().await;
+        self.tool_schemas.clear();
+        for tool in tools {
+            self.tool_schemas.insert(tool.name.clone(), tool);
+        }
+    }
+
+    fn get_tool(&self, name: &str) -> Option<&Tool> {
+        self.tool_schemas.get(name)
+    }
+
+    async fn call_tool(&self, name: &str, args: Value) -> Result<CallToolResult, McpError> {
+        // Find which skill this tool corresponds to
+        // Tool names are in format: category_name
+        let skill_id = format!("skill:{}", name.replace('_', ":"));
+        
+        let result = self.skill_handler
+            .execute_skill(&skill_id, args, None, None)
+            .await
+            .map_err(|e| McpError::internal_error(format!("Skill execution failed: {}", e), None))?;
+        
+        Ok(result)
+    }
+}
+
+/// The Ferris Aegis MCP server with dynamic skill tool support.
 #[derive(Clone)]
 pub struct AegisMcpServer {
-    /// The tool router — required by rmcp's macro system.
+    /// The tool router for static tools
     tool_router: ToolRouter<Self>,
-    /// Prometheus metrics handle — every tool call increments counters.
+    /// Prometheus metrics handle
     metrics: CoreMetrics,
+    /// Dynamic skill handler
+    skill_handler: Option<Arc<RwLock<DynamicSkillHandler>>>,
 }
 
 impl AegisMcpServer {
@@ -118,21 +134,71 @@ impl AegisMcpServer {
         Self {
             tool_router: Self::tool_router(),
             metrics,
+            skill_handler: None,
+        }
+    }
+
+    /// Create a new MCP server with skill support.
+    pub fn with_skills(
+        metrics: CoreMetrics,
+        skill_handler: Arc<SkillMcpHandler>,
+    ) -> Self {
+        let mut server = Self::new(metrics);
+        server.skill_handler = Some(Arc::new(RwLock::new(DynamicSkillHandler::new(skill_handler))));
+        server
+    }
+
+    /// Get the list of all tools (static + dynamic)
+    pub async fn list_all_tools(&self) -> Vec<Tool> {
+        let mut tools = vec![
+            Tool {
+                name: "file_read".to_string(),
+                description: "Read a file from the local filesystem. Returns the file contents as text. Only absolute paths are accepted.".to_string(),
+                input_schema: schema_for!(FileReadParams),
+                output_schema: None,
+                annotations: None,
+            }
+        ];
+
+        if let Some(ref skill_handler) = self.skill_handler {
+            let handler = skill_handler.read().await;
+            tools.extend(handler.tool_schemas.values().cloned());
+        }
+
+        tools
+    }
+
+    /// Call a tool by name (static or dynamic)
+    pub async fn call_tool_by_name(&self, name: &str, args: Value) -> Result<CallToolResult, McpError> {
+        // Try static tools first
+        if name == "file_read" {
+            let params: FileReadParams = serde_json::from_value(args)
+                .map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?;
+            return self.file_read(Parameters(params)).await;
+        }
+
+        // Try dynamic skill tools
+        if let Some(ref skill_handler) = self.skill_handler {
+            let handler = skill_handler.read().await;
+            if handler.get_tool(name).is_some() {
+                return handler.call_tool(name, args).await;
+            }
+        }
+
+        Err(McpError::method_not_found(format!("Tool not found: {}", name), None))
+    }
+
+    /// Refresh dynamic tools from registry
+    pub async fn refresh_skills(&self) {
+        if let Some(ref skill_handler) = self.skill_handler {
+            let mut handler = skill_handler.write().await;
+            handler.refresh_tools().await;
         }
     }
 }
 
 #[tool_router]
 impl AegisMcpServer {
-    /// Read a file from the local filesystem.
-    ///
-    /// Returns the file contents as text. Binary content is decoded
-    /// lossily. Output is truncated at `max_bytes` (default 64 KiB).
-    ///
-    /// Security constraints:
-    /// - Only absolute paths accepted
-    /// - Symlinks are resolved via canonicalization
-    /// - Directory traversal (`..`) is rejected
     #[tool(description = "Read a file from the local filesystem. Returns the file contents as text. Only absolute paths are accepted.")]
     async fn file_read(
         &self,
@@ -175,12 +241,11 @@ impl AegisMcpServer {
     }
 }
 
+// Custom ServerHandler implementation that supports dynamic tools
 #[tool_handler]
 impl ServerHandler for AegisMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            // Pin to V_2025_11_25 explicitly — do NOT use .LATEST,
-            // which could silently change on a rmcp version bump.
             protocol_version: ProtocolVersion::V_2025_11_25,
             capabilities: ServerCapabilities::builder()
                 .enable_tools()
@@ -191,8 +256,8 @@ impl ServerHandler for AegisMcpServer {
                 ..Default::default()
             },
             instructions: Some(
-                "Ferris Aegis MCP Server — The Rust Guardian for Autonomous Intelligence. \
-                 Available tools: file_read (read a file from the local filesystem). \
+                "Ferris Aegis MCP Server — The Rust Guardian for Autonomous Intelligence.\n\
+                 Available tools: file_read (read a file from the local filesystem) plus dynamically loaded skills.\n\
                  Security: only absolute paths accepted; directory traversal is rejected."
                     .to_string(),
             ),
@@ -220,7 +285,6 @@ mod tests {
 
     #[test]
     fn file_read_works_on_real_file() {
-        // Read our own source file
         let result = read_file_inner(file!(), 1024);
         assert!(result.is_ok());
         let content = result.unwrap();
