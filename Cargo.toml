@@ -12,6 +12,7 @@ members = [
     "crates/supervisor",
     "crates/semantic-memory",
     "crates/a2a",
+    "crates/resilience",
     ".",
 ]
 
@@ -85,6 +86,9 @@ wasmtime = "46"
 # Episodic memory (Phase 3)
 sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"] }
 
+# Async trait (Phase 5 resilience)
+async-trait = "0.1"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unused_must_use = "deny"
@@ -127,6 +131,7 @@ ferris-aegis-session = { path = "crates/session" }
 ferris-aegis-supervisor = { path = "crates/supervisor" }
 ferris-aegis-semantic-memory = { path = "crates/semantic-memory" }
 ferris-aegis-a2a = { path = "crates/a2a" }
+ferris-aegis-resilience = { path = "crates/resilience" }
 
 [lints]
 workspace = true

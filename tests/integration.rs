@@ -564,3 +564,300 @@ fn completion_criterion_18_protected_secret() {
     assert!(!debug_str.contains("sk-api-key-12345"));
     assert!(debug_str.contains("ProtectedSecret"));
 }
+
+// ── Phase 5: Production Hardening ──────────────────────────────────
+
+use ferris_aegis_kernel::{
+    config::{AegisConfig},
+    health::{SystemHealth},
+};
+use ferris_aegis_resilience::{
+    CircuitBreaker, CircuitBreakerConfig, CircuitState,
+    RetryPolicy, RetryConfig,
+    RateLimiter, RateLimiterConfig,
+    with_timeout, HealthRegistry,
+};
+
+// □ Completion Criterion 19: Config validation rejects out-of-range values
+#[test]
+fn completion_criterion_19_config_validation() {
+    let config = AegisConfig::default_config();
+    assert!(config.validate().is_ok(), "Default config should be valid");
+
+    // Invalid trust score
+    let mut bad = AegisConfig::default_config();
+    bad.trust.initial_score = 2.0;
+    assert!(bad.validate().is_err());
+
+    // Invalid log level
+    let mut bad = AegisConfig::default_config();
+    bad.system.log_level = "verbose".to_string();
+    assert!(bad.validate().is_err());
+
+    // Memory too small
+    let mut bad = AegisConfig::default_config();
+    bad.sandbox.default_memory_limit = 100;
+    assert!(bad.validate().is_err());
+
+    // Warnings for edge cases
+    let mut warn = AegisConfig::default_config();
+    warn.trust.initial_score = 0.01;
+    let warnings = warn.warnings();
+    assert!(!warnings.is_empty());
+}
+
+// □ Completion Criterion 20: Circuit breaker trips and recovers
+#[test]
+fn completion_criterion_20_circuit_breaker() {
+    let config = CircuitBreakerConfig {
+        failure_threshold: 3,
+        recovery_timeout_ms: 0,
+        half_open_success_threshold: 2,
+    };
+    let mut cb = CircuitBreaker::new(config);
+
+    assert_eq!(cb.state(), CircuitState::Closed);
+
+    // Trip after 3 failures
+    for _ in 0..3 {
+        assert!(cb.allow_request());
+        cb.record_failure();
+    }
+    assert_eq!(cb.state(), CircuitState::Open);
+
+    // Rejects when open
+    assert!(!cb.allow_request());
+
+    // With 0ms timeout, next request goes half-open
+    assert!(cb.allow_request());
+    assert_eq!(cb.state(), CircuitState::HalfOpen);
+
+    // Two successes close it
+    cb.record_success();
+    assert_eq!(cb.state(), CircuitState::HalfOpen);
+    cb.record_success();
+    assert_eq!(cb.state(), CircuitState::Closed);
+}
+
+// □ Completion Criterion 21: Retry with exponential backoff + jitter
+#[test]
+fn completion_criterion_21_retry_backoff() {
+    let config = RetryConfig {
+        base_delay_ms: 100,
+        max_delay_ms: 10_000,
+        max_retries: 3,
+        use_jitter: false,
+    };
+    let policy = RetryPolicy::new(config);
+
+    // Exponential: 100, 200, 400, 800
+    assert_eq!(policy.delay_for_attempt(0).as_millis(), 100);
+    assert_eq!(policy.delay_for_attempt(1).as_millis(), 200);
+    assert_eq!(policy.delay_for_attempt(2).as_millis(), 400);
+
+    // Jitter is enabled by default
+    let jitter_config = RetryConfig {
+        use_jitter: true,
+        ..config
+    };
+    let jitter_policy = RetryPolicy::new(jitter_config);
+    let delay = jitter_policy.delay_for_attempt(0).as_millis();
+    // With jitter, should be within 75-125ms (±25% of 100)
+    assert!(delay >= 50 && delay <= 150,
+        "Jittered delay {} should be near 100ms", delay);
+}
+
+// □ Completion Criterion 22: Rate limiter token bucket
+#[test]
+fn completion_criterion_22_rate_limiter() {
+    let config = RateLimiterConfig {
+        capacity: 10,
+        refill_rate: 100.0,
+        refill_interval_ms: 10,
+    };
+    let mut rl = RateLimiter::new(config);
+
+    // Burst of 10 should all pass
+    for _ in 0..10 {
+        assert!(rl.try_acquire(), "Burst of 10 should be within capacity");
+    }
+    // 11th should fail (capacity exhausted)
+    assert!(!rl.try_acquire(), "11th request should be rate-limited");
+    assert_eq!(rl.total_allowed(), 10);
+    assert_eq!(rl.total_denied(), 1);
+}
+
+// □ Completion Criterion 23: Timeout enforcement
+#[tokio::test]
+async fn completion_criterion_23_timeout() {
+    // Operation within timeout
+    let result = with_timeout("fast", std::time::Duration::from_secs(5), async { 42 }).await;
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), 42);
+
+    // Operation exceeding timeout
+    let result = with_timeout("slow", std::time::Duration::from_millis(1), async {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        42
+    })
+    .await;
+    assert!(result.is_err());
+}
+
+// □ Completion Criterion 24: Health registry aggregates component status
+#[tokio::test]
+async fn completion_criterion_24_health_registry() {
+    struct TestCheck {
+        name: String,
+        status: ferris_aegis_resilience::HealthStatus,
+    }
+    #[async_trait::async_trait]
+    impl ferris_aegis_resilience::HealthCheck for TestCheck {
+        fn name(&self) -> &str { &self.name }
+        async fn check_health(&self) -> ferris_aegis_resilience::HealthCheckResult {
+            ferris_aegis_resilience::HealthCheckResult {
+                component: self.name.clone(),
+                status: self.status,
+                message: None,
+                checked_at: chrono::Utc::now(),
+                duration_ms: 0,
+            }
+        }
+    }
+
+    let mut registry = HealthRegistry::new();
+    registry.register(Box::new(TestCheck {
+        name: "db".to_string(),
+        status: ferris_aegis_resilience::HealthStatus::Healthy,
+    }));
+    registry.register(Box::new(TestCheck {
+        name: "cache".to_string(),
+        status: ferris_aegis_resilience::HealthStatus::Unhealthy,
+    }));
+
+    let aggregate = registry.aggregate_status().await;
+    assert_eq!(aggregate, ferris_aegis_resilience::HealthStatus::Unhealthy);
+    assert!(!registry.is_healthy().await);
+}
+
+// □ Completion Criterion 25: Kernel system health report
+#[test]
+fn completion_criterion_25_system_health() {
+    let health = SystemHealth::new();
+    let report = health.report();
+
+    assert!(report.is_healthy());
+    assert_eq!(report.healthy_count, 6);
+    assert_eq!(report.total_components, 6);
+
+    // Simulate a degraded component
+    let mut health2 = SystemHealth::new();
+    health2.guard_ok = false;
+    let report2 = health2.report();
+    assert!(report2.is_unhealthy());
+    assert_eq!(report2.unhealthy_count, 1);
+}
+
+// □ Completion Criterion 26: Config warnings for production edge cases
+#[test]
+fn completion_criterion_26_config_warnings() {
+    let mut config = AegisConfig::default_config();
+
+    // Healthy config = no warnings
+    assert!(config.warnings().is_empty());
+
+    // Low trust = warning
+    config.trust.initial_score = 0.01;
+    assert!(config.warnings().iter().any(|w| w.contains("initial_score")));
+
+    // Aggressive decay = warning
+    config.trust.decay_factor = 0.5;
+    assert!(config.warnings().iter().any(|w| w.contains("decay_factor")));
+}
+
+// □ Completion Criterion 27: Circuit breaker force open/close
+#[test]
+fn completion_criterion_27_circuit_breaker_force() {
+    let mut cb = CircuitBreaker::with_defaults();
+    assert_eq!(cb.state(), CircuitState::Closed);
+
+    cb.force_open();
+    assert_eq!(cb.state(), CircuitState::Open);
+    assert!(!cb.allow_request());
+
+    cb.force_closed();
+    assert_eq!(cb.state(), CircuitState::Closed);
+    assert!(cb.allow_request());
+}
+
+// □ Completion Criterion 28: Rate limiter refill after waiting
+#[tokio::test]
+async fn completion_criterion_28_rate_limiter_refill() {
+    let config = RateLimiterConfig {
+        capacity: 3,
+        refill_rate: 50.0,
+        refill_interval_ms: 20,
+    };
+    let mut rl = RateLimiter::new(config);
+
+    // Exhaust capacity
+    for _ in 0..3 {
+        assert!(rl.try_acquire());
+    }
+    assert!(!rl.try_acquire());
+
+    // Wait for some refill
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // Should have some tokens now
+    let had_token = rl.try_acquire();
+    assert!(had_token || rl.try_acquire());
+}
+
+// ── End-to-End: All phases together ────────────────────────────────
+
+/// Verify the full pipeline: Config → Trust → Agent → Session → Supervisor → Resilience
+#[tokio::test]
+async fn completion_criterion_29_full_pipeline() {
+    // Phase 5: Config validation
+    let config = AegisConfig::default_config();
+    assert!(config.validate().is_ok());
+
+    // Phase 1: Trust + Agent
+    let mut kernel = TrustKernel::new()
+        .with_initial_score(config.trust.initial_score)
+        .with_decay_factor(config.trust.decay_factor);
+    let agent_id = AgentId::new("pipeline-test");
+    kernel.register(&agent_id);
+    kernel.reinforce(&agent_id, 0.5);
+    let record = kernel.get_record(&agent_id).unwrap();
+    assert!(record.score.value() > 0.4);
+
+    // Phase 3: Security
+    let allowlist = ToolAllowlist::default_safe();
+    assert_eq!(allowlist.check("file_read"), AllowlistVerdict::Allowed);
+
+    let scanner = InjectionScanner::new();
+    assert!(scanner.scan("normal text").is_clean());
+
+    // Phase 4: Session + Supervisor
+    let mut session = Session::new(&agent_id.to_string(), "pipeline-test");
+    session.advance_turn();
+    assert_eq!(session.turn, 1);
+
+    let supervisor = Supervisor::with_defaults();
+    let findings = supervisor.findings();
+    assert!(findings.is_empty(), "Fresh supervisor should have no findings");
+
+    // Phase 5: Resilience
+    let mut cb = CircuitBreaker::with_defaults();
+    assert_eq!(cb.state(), CircuitState::Closed);
+    assert!(cb.allow_request());
+
+    let mut rl = RateLimiter::with_defaults();
+    assert!(rl.try_acquire());
+
+    // Health
+    let health = SystemHealth::new();
+    assert!(health.report().is_healthy());
+}

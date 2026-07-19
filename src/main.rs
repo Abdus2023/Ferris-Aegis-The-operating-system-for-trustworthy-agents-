@@ -9,6 +9,7 @@ use ferris_aegis_kernel::{
     audit::AuditLedger,
     config::AegisConfig,
     guard::Guard,
+    health::SystemHealth,
     kernel::TrustKernel,
     policy::PolicyEngine,
     sandbox::Sandbox,
@@ -77,6 +78,9 @@ enum Commands {
 
     /// Show system status
     Status,
+
+    /// Run health checks on all components
+    Health,
 
     /// Verify the audit ledger integrity
     Verify,
@@ -240,6 +244,9 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Status => {
             show_status()?;
         }
+        Commands::Health => {
+            show_health()?;
+        }
         Commands::Verify => {
             verify_ledger()?;
         }
@@ -281,10 +288,15 @@ async fn start_daemon(foreground: bool) -> anyhow::Result<()> {
     println!("✓ Sandbox Manager ready");
     println!("✓ Audit Ledger initialized");
     println!("✓ Observability: OTel + Prometheus + JSON stderr");
-    println!("✓ Security: Allowlist + Injection Scanner + SSRF Guard + Credential Vault");
+    println!("✓ Security: Allowlist + Injection Scanner + SSRF Guard + ProtectedSecret Vault");
     println!("✓ WASM Sandbox: Fuel-metered + Memory-capped + Epoch-interruptible");
     println!("✓ Episodic Memory: SQLite-backed");
     println!("✓ Plugin System: Ed25519 manifest signing");
+    println!("✓ Session Manager: Multi-turn conversation sessions");
+    println!("✓ Supervisor: Anomaly detection + intervention recommendations");
+    println!("✓ Semantic Memory: Concepts + Embeddings + Summaries");
+    println!("✓ A2A Protocol: AgentCard + trust-gated routing");
+    println!("✓ Resilience: Circuit breaker + Retry + Timeout + Rate limiter");
     println!();
 
     if foreground {
@@ -470,25 +482,78 @@ fn show_status() -> anyhow::Result<()> {
     println!("═════════════════════════════");
     println!("Version:  {} ({})", VERSION, CODENAME);
     println!();
-    println!("Components:");
+    println!("Phase 1 — Kernel:");
     println!("  Trust Kernel:     ○ Ready");
     println!("  Policy Engine:    ○ Ready");
     println!("  Agent Runtime:    ○ Ready");
     println!("  Sandbox:          ○ Ready");
     println!("  Guard:            ○ Ready");
     println!("  Audit Ledger:     ○ Ready");
+    println!();
+    println!("Phase 2 — Observability + MCP:");
     println!("  Observability:    ○ Ready (OTel + Prometheus + JSON stderr)");
     println!("  MCP Server:       ○ Ready (stdio, V_2025_11_25)");
-    println!("  Security:         ○ Ready (Allowlist + Injection + SSRF + Vault)");
+    println!();
+    println!("Phase 3 — Security:");
+    println!("  Tool Allowlist:   ○ Ready (deny-by-default)");
+    println!("  Injection Scanner:○ Ready");
+    println!("  SSRF Guard:       ○ Ready");
+    println!("  Credential Vault: ○ Ready (ProtectedSecret)");
     println!("  WASM Sandbox:     ○ Ready (Fuel + Memory + Epoch)");
     println!("  Episodic Memory:  ○ Ready (SQLite)");
     println!("  Plugin System:    ○ Ready (Ed25519 signing)");
     println!();
-    println!("Commands:");
-    println!("  aegis start --foreground   Launch daemon");
-    println!("  aegis mcp                  Start MCP stdio server");
-    println!("  aegis security scan-injection \"text\"  Scan for injection");
-    println!("  aegis security check-url <url>        Check SSRF risk");
+    println!("Phase 4 — Agent OS:");
+    println!("  Session Manager:  ○ Ready");
+    println!("  Supervisor:       ○ Ready (Anomaly detection)");
+    println!("  Semantic Memory:  ○ Ready (Concepts + Embeddings)");
+    println!("  A2A Protocol:     ○ Ready (AgentCard + Router)");
+    println!();
+    println!("Phase 5 — Production Hardening:");
+    println!("  Config Validation:○ Ready (Range + format checks)");
+    println!("  Health Checks:    ○ Ready (Per-component + aggregate)");
+    println!("  Circuit Breaker:  ○ Ready");
+    println!("  Retry Policy:     ○ Ready (Exponential backoff + jitter)");
+    println!("  Timeout:          ○ Ready (Deadline enforcement)");
+    println!("  Rate Limiter:     ○ Ready (Token bucket)");
+    println!();
+    Ok(())
+}
+
+fn show_health() -> anyhow::Result<()> {
+    let health = SystemHealth::new();
+    let report = health.report();
+
+    println!();
+    println!("🫀 Ferris Aegis Health Report");
+    println!("═══════════════════════════════");
+    println!(
+        "Status:  {}",
+        match report.system_status {
+            ferris_aegis_kernel::health::HealthStatus::Healthy => "✓ Healthy",
+            ferris_aegis_kernel::health::HealthStatus::Degraded => "⚠ Degraded",
+            ferris_aegis_kernel::health::HealthStatus::Unhealthy => "✗ Unhealthy",
+        }
+    );
+    println!(
+        "Components: {} healthy / {} degraded / {} unhealthy",
+        report.healthy_count, report.degraded_count, report.unhealthy_count
+    );
+    println!();
+
+    for component in &report.components {
+        let icon = match component.status {
+            ferris_aegis_kernel::health::HealthStatus::Healthy => "✓",
+            ferris_aegis_kernel::health::HealthStatus::Degraded => "⚠",
+            ferris_aegis_kernel::health::HealthStatus::Unhealthy => "✗",
+        };
+        print!("  {} {} ", icon, component.component);
+        if let Some(ref msg) = component.message {
+            print!("— {}", msg);
+        }
+        println!();
+    }
+
     println!();
     Ok(())
 }
