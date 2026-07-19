@@ -23,7 +23,7 @@ use ferris_aegis_security::{
     ToolAllowlist, AllowlistVerdict,
     InjectionScanner, InjectionVerdict,
     SsrfGuard, SsrfVerdict,
-    CredentialVault, ToolCall,
+    CredentialVault, ToolCall, ProtectedSecret,
 };
 use ferris_aegis_sandbox_wasm::{WasmSandbox, WasmSandboxConfig, minimal_test_wasm, infinite_loop_wasm};
 use ferris_aegis_memory::EpisodicMemory;
@@ -137,7 +137,7 @@ fn completion_criterion_5_no_keys_in_trace() {
         "http_request",
         serde_json::json!({"url": "https://api.example.com"}),
     );
-    let auth_call = call.with_credential(SecretString::new("sk-secret-key-12345".to_string()));
+    let auth_call = call.with_credential(ProtectedSecret::new("sk-secret-key-12345"));
 
     // The call's serialized form must NOT contain the key
     let serialized = serde_json::to_string(auth_call.call).unwrap();
@@ -212,7 +212,7 @@ fn completion_criterion_8_trace_from_call_only() {
     assert!(!traceable.contains("_credential"));
 
     // The authenticated version carries the secret separately
-    let auth = call.with_credential(SecretString::new("sk-key".to_string()));
+    let auth = call.with_credential(ProtectedSecret::new("sk-key"));
     let traceable_call = serde_json::to_string(auth.call).unwrap();
     assert!(!traceable_call.contains("sk-key"));
 }

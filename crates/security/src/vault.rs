@@ -41,7 +41,7 @@ pub struct StoredCredential {
 ///
 /// Stores credentials encrypted with AES-256-GCM. The encryption key
 /// is derived from a master key provided at initialization. The key
-/// is held in a `Secret<String>` and zeroized on drop.
+/// is held in a `SecretBox<[u8; 32]>` and zeroized on drop.
 pub struct CredentialVault {
     /// The derived encryption key (32 bytes for AES-256).
     key: SecretBox<[u8; 32]>,
@@ -94,10 +94,10 @@ impl CredentialVault {
 
     /// Retrieve a credential from the vault by name.
     ///
-    /// Returns the decrypted credential as a `Secret<String>`. The
-    /// caller is responsible for not converting it to a plain `String`
+    /// Returns the decrypted credential as a [`ProtectedSecret`]. The
+    /// caller is responsible for not converting it beyond `.expose_secret()`
     /// except at the point of actual use.
-    pub fn get(&self, name: &str) -> Option<SecretString> {
+    pub fn get(&self, name: &str) -> Option<ProtectedSecret> {
         let stored = self.credentials.iter().find(|c| c.name == name)?;
 
         let cipher = Aes256Gcm::new_from_slice(self.key.expose_secret()).ok()?;
@@ -106,11 +106,10 @@ impl CredentialVault {
 
         let decrypted = cipher.decrypt(nonce, stored.encrypted.as_slice()).ok()?;
 
-        // Convert to SecretString immediately — never a plain String
         let secret_str =
             String::from_utf8(decrypted).ok()?;
 
-        Some(SecretString::new(secret_str))
+        Some(ProtectedSecret::new(secret_str))
     }
 
     /// Remove a credential from the vault.
@@ -154,9 +153,14 @@ pub struct AuthenticatedCall<'a> {
     /// produced, with no credential data injected.
     pub call: &'a ToolCall,
     /// The credential to inject, if this tool requires one.
-    /// Structurally cannot be Debug'd or Serialize'd — `Secret<String>`
-    /// protects its contents at the type level.
-    pub credential: Option<SecretString>,
+    ///
+    /// Held as [`ProtectedSecret`], which never implements `Serialize`
+    /// and redacts `Debug`. Unlike a raw `SecretString` (which gains a
+    /// leaking `Serialize` impl if `secrecy/serde` is unified from any
+    /// other crate in the workspace), `ProtectedSecret` structurally
+    /// cannot leak through serialization regardless of downstream
+    /// feature flags.
+    pub credential: Option<ProtectedSecret>,
 }
 
 /// A tool call as proposed by the LLM.
@@ -185,7 +189,7 @@ impl ToolCall {
     ///
     /// The credential travels separately from the call — it is never
     /// injected into `arguments`. This is the structural guarantee.
-    pub fn with_credential(&self, credential: SecretString) -> AuthenticatedCall<'_> {
+    pub fn with_credential(&self, credential: ProtectedSecret) -> AuthenticatedCall<'_> {
         AuthenticatedCall {
             call: self,
             credential: Some(credential),
@@ -328,7 +332,7 @@ mod tests {
             serde_json::json!({"url": "https://api.example.com"}),
         );
 
-        let auth_call = call.with_credential(SecretString::new("sk-api-key-123".to_string()));
+        let auth_call = call.with_credential(ProtectedSecret::new("sk-api-key-123"));
 
         // The call's arguments are still clean — no credential injected
         assert!(auth_call.call.arguments.as_object().unwrap().get("_credential").is_none());
@@ -343,5 +347,20 @@ mod tests {
         // The call itself can be freely serialized (no secret leakage)
         let serialized = serde_json::to_string(auth_call.call).unwrap();
         assert!(!serialized.contains("sk-api-key-123"));
+    }
+
+    #[test]
+    fn protected_secret_debug_is_redacted() {
+        let secret = ProtectedSecret::new("top-secret-value-42");
+        let debug = format!("{:?}", secret);
+        // Redacted in debug output
+        assert!(!debug.contains("top-secret-value-42"));
+        assert!(debug.contains("ProtectedSecret"));
+    }
+
+    #[test]
+    fn protected_secret_expose_secret_works() {
+        let secret = ProtectedSecret::new("my-api-key");
+        assert_eq!(secret.expose_secret(), "my-api-key");
     }
 }
