@@ -15,9 +15,9 @@
 //! - Tool-call tracing spans are populated from `call.arguments` only —
 //!   never from a post-injection copy that could carry `credential`.
 
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
+use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Aes256Gcm as Cipher, Nonce};
-use secrecy::{ExposeSecret, Secret, SecretString};
+use secrecy::{ExposeSecret, SecretBox, SecretString};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -41,10 +41,10 @@ pub struct StoredCredential {
 ///
 /// Stores credentials encrypted with AES-256-GCM. The encryption key
 /// is derived from a master key provided at initialization. The key
-/// is held in a `Secret<String>` and zeroized on drop.
+/// is held in a `SecretBox<[u8; 32]>` and zeroized on drop.
 pub struct CredentialVault {
     /// The derived encryption key (32 bytes for AES-256).
-    key: Secret<[u8; 32]>,
+    key: SecretBox<[u8; 32]>,
     /// Stored credentials indexed by name.
     credentials: Vec<StoredCredential>,
 }
@@ -61,7 +61,7 @@ impl CredentialVault {
         let key_bytes: [u8; 32] = hasher.finalize().into();
 
         Self {
-            key: Secret::new(key_bytes),
+            key: SecretBox::new(Box::new(key_bytes)),
             credentials: Vec::new(),
         }
     }
@@ -74,17 +74,16 @@ impl CredentialVault {
         let cipher = Aes256Gcm::new_from_slice(self.key.expose_secret())
             .map_err(|e| anyhow::anyhow!("failed to create cipher: {e}"))?;
 
-        let nonce_bytes = aes_gcm::aead::rand_nonce::generate_nonce(&mut OsRng);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
         let encrypted = cipher
-            .encrypt(nonce, secret.expose_secret().as_bytes())
+            .encrypt(&nonce, secret.expose_secret().as_bytes())
             .map_err(|e| anyhow::anyhow!("encryption failed: {e}"))?;
 
         self.credentials.push(StoredCredential {
             name: name.to_string(),
             encrypted,
-            nonce: nonce_bytes.to_vec(),
+            nonce: nonce.to_vec(),
             created_at: chrono::Utc::now(),
             expires_at: None,
         });
@@ -95,10 +94,10 @@ impl CredentialVault {
 
     /// Retrieve a credential from the vault by name.
     ///
-    /// Returns the decrypted credential as a `Secret<String>`. The
-    /// caller is responsible for not converting it to a plain `String`
+    /// Returns the decrypted credential as a [`ProtectedSecret`]. The
+    /// caller is responsible for not converting it beyond `.expose_secret()`
     /// except at the point of actual use.
-    pub fn get(&self, name: &str) -> Option<SecretString> {
+    pub fn get(&self, name: &str) -> Option<ProtectedSecret> {
         let stored = self.credentials.iter().find(|c| c.name == name)?;
 
         let cipher = Aes256Gcm::new_from_slice(self.key.expose_secret()).ok()?;
@@ -107,11 +106,10 @@ impl CredentialVault {
 
         let decrypted = cipher.decrypt(nonce, stored.encrypted.as_slice()).ok()?;
 
-        // Convert to SecretString immediately — never a plain String
         let secret_str =
             String::from_utf8(decrypted).ok()?;
 
-        Some(SecretString::new(secret_str))
+        Some(ProtectedSecret::new(secret_str))
     }
 
     /// Remove a credential from the vault.
@@ -155,9 +153,14 @@ pub struct AuthenticatedCall<'a> {
     /// produced, with no credential data injected.
     pub call: &'a ToolCall,
     /// The credential to inject, if this tool requires one.
-    /// Structurally cannot be Debug'd or Serialize'd — `Secret<String>`
-    /// protects its contents at the type level.
-    pub credential: Option<SecretString>,
+    ///
+    /// Held as [`ProtectedSecret`], which never implements `Serialize`
+    /// and redacts `Debug`. Unlike a raw `SecretString` (which gains a
+    /// leaking `Serialize` impl if `secrecy/serde` is unified from any
+    /// other crate in the workspace), `ProtectedSecret` structurally
+    /// cannot leak through serialization regardless of downstream
+    /// feature flags.
+    pub credential: Option<ProtectedSecret>,
 }
 
 /// A tool call as proposed by the LLM.
@@ -186,7 +189,7 @@ impl ToolCall {
     ///
     /// The credential travels separately from the call — it is never
     /// injected into `arguments`. This is the structural guarantee.
-    pub fn with_credential(&self, credential: SecretString) -> AuthenticatedCall<'_> {
+    pub fn with_credential(&self, credential: ProtectedSecret) -> AuthenticatedCall<'_> {
         AuthenticatedCall {
             call: self,
             credential: Some(credential),
@@ -199,6 +202,51 @@ impl ToolCall {
             call: self,
             credential: None,
         }
+    }
+}
+
+/// A structurally-protected secret credential.
+///
+/// This is a newtype over `SecretString` that provides an additional layer
+/// of type safety for API keys, tokens, and other credentials. Unlike a
+/// raw `SecretString`, `ProtectedSecret` cannot be accidentally mixed with
+/// other string types and carries explicit intent in the type system.
+///
+/// # Safety
+///
+/// - Never implements `Debug` or `Display` in a way that exposes the secret.
+/// - The inner `SecretString` is zeroized on drop.
+/// - Access via `.expose_secret()` is structurally obvious at the call site.
+#[derive(Clone)]
+pub struct ProtectedSecret(SecretString);
+
+impl ProtectedSecret {
+    /// Create a new protected secret from a string value.
+    pub fn new(secret: impl Into<String>) -> Self {
+        Self(SecretString::new(secret.into()))
+    }
+
+    /// Expose the inner secret.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure the exposed value is not logged, serialized,
+    /// or sent to LLM context. This should only be called at the point
+    /// of actual use (e.g. building an HTTP authorization header).
+    pub fn expose_secret(&self) -> &str {
+        self.0.expose_secret()
+    }
+
+    /// Get a reference to the inner `SecretString`.
+    pub fn inner(&self) -> &SecretString {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for ProtectedSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProtectedSecret")
+            .finish_non_exhaustive()
     }
 }
 
@@ -284,7 +332,7 @@ mod tests {
             serde_json::json!({"url": "https://api.example.com"}),
         );
 
-        let auth_call = call.with_credential(SecretString::new("sk-api-key-123".to_string()));
+        let auth_call = call.with_credential(ProtectedSecret::new("sk-api-key-123"));
 
         // The call's arguments are still clean — no credential injected
         assert!(auth_call.call.arguments.as_object().unwrap().get("_credential").is_none());
@@ -299,5 +347,20 @@ mod tests {
         // The call itself can be freely serialized (no secret leakage)
         let serialized = serde_json::to_string(auth_call.call).unwrap();
         assert!(!serialized.contains("sk-api-key-123"));
+    }
+
+    #[test]
+    fn protected_secret_debug_is_redacted() {
+        let secret = ProtectedSecret::new("top-secret-value-42");
+        let debug = format!("{:?}", secret);
+        // Redacted in debug output
+        assert!(!debug.contains("top-secret-value-42"));
+        assert!(debug.contains("ProtectedSecret"));
+    }
+
+    #[test]
+    fn protected_secret_expose_secret_works() {
+        let secret = ProtectedSecret::new("my-api-key");
+        assert_eq!(secret.expose_secret(), "my-api-key");
     }
 }

@@ -26,6 +26,7 @@ pub mod agent;
 pub mod audit;
 pub mod config;
 pub mod guard;
+pub mod health;
 pub mod kernel;
 pub mod policy;
 pub mod sandbox;
@@ -44,4 +45,5 @@ pub mod prelude {
     pub use crate::policy::{Policy, PolicyEngine, PolicyVerdict};
     pub use crate::sandbox::{Capability, Sandbox, SandboxBoundary};
     pub use crate::guard::{Guard, GuardAlert, GuardAction};
+    pub use crate::health::{ComponentHealth, HealthReport, SystemHealth};
 }

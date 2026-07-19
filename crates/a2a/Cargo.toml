@@ -1,0 +1,24 @@
+[package]
+name = "ferris-aegis-a2a"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ferris Aegis — Agent-to-Agent protocol with discoverable AgentCard (Phase 4)"
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+schemars = { workspace = true }
+ferris-aegis-kernel = { path = "../kernel" }
+ferris-aegis-session = { path = "../session" }
+ferris-aegis-security = { path = "../security" }
+
+[lints]
+workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "ferris-aegis-semantic-memory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ferris Aegis — Semantic memory with embedding storage and concept extraction (Phase 4)"
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sqlx = { workspace = true }
+ferris-aegis-memory = { path = "../memory" }
+
+[lints]
+workspace = true
