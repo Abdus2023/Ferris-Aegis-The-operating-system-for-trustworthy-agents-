@@ -297,6 +297,7 @@ async fn start_daemon(foreground: bool) -> anyhow::Result<()> {
     println!("✓ Semantic Memory: Concepts + Embeddings + Summaries");
     println!("✓ A2A Protocol: AgentCard + trust-gated routing");
     println!("✓ Resilience: Circuit breaker + Retry + Timeout + Rate limiter");
+    println!("✓ Durable Execution: Checkpoint durability + Crash recovery");
     println!();
 
     if foreground {
@@ -516,6 +517,12 @@ fn show_status() -> anyhow::Result<()> {
     println!("  Retry Policy:     ○ Ready (Exponential backoff + jitter)");
     println!("  Timeout:          ○ Ready (Deadline enforcement)");
     println!("  Rate Limiter:     ○ Ready (Token bucket)");
+    println!();
+    println!("Phase 5.1 — Durable Execution:");
+    println!("  Step Durability:  ○ Ready (Checkpoint after every step)");
+    println!("  Crash Recovery:   ○ Ready (Resume from last checkpoint)");
+    println!("  Checkpoint Store: ○ Ready (In-memory + SQLite)");
+    println!("  Hash Verification:○ Ready (Tamper evidence)");
     println!();
     Ok(())
 }

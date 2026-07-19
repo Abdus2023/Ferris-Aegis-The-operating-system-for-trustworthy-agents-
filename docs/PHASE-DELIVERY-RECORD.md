@@ -1,8 +1,8 @@
 # Ferris Aegis — Phase Delivery Record
 
 > Detailed per-phase record of what was delivered, when, and how.
-> Branch: `arena/019f7994-ferris-aegis-the-operating-sys`
-> Version: 0.3.0 | 35 Rust files | 11,758 lines | 12 crates
+> Branch: `arena/019f7a09-ferris-aegis-the-operating-sys`
+> Version: 0.4.0 | ~39 Rust files | ~13,100 lines | 13 crates
 
 ---
 
@@ -20,6 +20,7 @@
 | `sandbox.rs` | `Sandbox`, `Capability` (12 variants), `SandboxBoundary` | ~495 |
 | `guard.rs` | `Guard`, `GuardAction`, `GuardConfig`, `GuardAlert` | ~505 |
 | `config.rs` | `AegisConfig`, `SystemConfig`, `TrustConfig`, `SandboxConfig`, `AuditConfig`, `ConfigError`, `validate()`, `warnings()` | ~390 |
+| `health.rs` | `ComponentHealth`, `HealthReport`, `SystemHealth` | ~240 |
 
 ### Trust Levels
 
@@ -110,7 +111,7 @@ allowlist check, injection scanner, WASM fuel exhaustion, SQLite persistence, no
 
 ## Phase 4 — Session + Supervisor + Semantic Memory + A2A
 
-**Status:** ✅ Complete (PR #4, commit `7064f70` + `c84413d`)
+**Status:** ✅ Complete (PR #4, merged)
 **Crates:** `crates/session` (289 lines), `crates/supervisor` (458), `crates/semantic-memory` (629), `crates/a2a` (1,287)
 
 ### 4.2 — Session Manager
@@ -122,7 +123,6 @@ allowlist check, injection scanner, WASM fuel exhaustion, SQLite persistence, no
 
 - Rate anomaly monitoring (turns/minute), trust decay detection (score thresholds), context drift (placeholder), severity grading (Info→Critical)
 - Recommendation engine: Log → Notify → SuspendSession → QuarantineAgent → TerminateAgent
-- Note: anomaly detection, not ractor DAG-based. The ractor design exists in closed PR #3.
 
 ### 4.3 — Semantic Memory
 
@@ -133,7 +133,7 @@ allowlist check, injection scanner, WASM fuel exhaustion, SQLite persistence, no
 
 - `agent_card.rs`: `AgentCard` with `AgentSkill`, `AgentCapabilities`, `AgentProvider`, `AgentAuthentication`, `AgentCardBuilder`, `default_aegis_card()`, `AGENT_CARD_PATH`
 - `task.rs`: `A2aTask` lifecycle (Submitted→Working→Completed/Cancelled/Failed), `TaskResult`
-- `branch_a.rs`: `A2aServerConfig`, standalone AgentCard server (deferred to Phase 5.1)
+- `branch_a.rs`: `A2aServerConfig`, standalone AgentCard server
 - `branch_b.rs`: MCP tool params (`SessionCreateParams`, `SupervisorInspectParams`, `MemorySearchParams`), `BudgetStatus`
 
 ### Trust-Gated Routing (`lib.rs`)
@@ -148,7 +148,7 @@ Session lifecycle + clone, session manager, supervisor rate anomaly, trust decay
 
 ## Phase 5 — Production Hardening
 
-**Status:** ✅ Complete (PR #4, commit `eb3057c`)
+**Status:** ✅ Complete (PR #4, merged)
 **Crates:** `crates/resilience` (1,046 lines), `kernel/src/health.rs` (~240 lines)
 
 ### Resilience Primitives
@@ -180,6 +180,116 @@ Config validation, circuit breaker trip/recovery, retry backoff + jitter, rate l
 
 ---
 
+## Phase 5.1 — Durable Execution
+
+**Status:** ✅ Complete (this PR)
+**Crate:** `crates/durable` (~1,200 lines)
+
+### Core Abstractions
+
+| Component | Key Types | Purpose |
+|-----------|-----------|---------|
+| Step | `Step`, `StepFn`, `StepOutcome` | Unit of durable work |
+| Workflow | `Workflow`, `WorkflowId`, `WorkflowStatus` | Ordered sequence of steps |
+| Checkpoint | `Checkpoint`, `CheckpointData` | Snapshot of workflow state at step boundary |
+| CheckpointStore | `CheckpointStore` trait, `InMemoryCheckpointStore`, `SqliteCheckpointStore` | Pluggable persistence backend |
+| DurableExecutor | `DurableExecutor`, `DurableExecutorConfig` | Runs workflows with checkpoint durability |
+| CrashRecovery | `CrashRecovery`, `RecoveryResult`, `RecoveryDetail` | Scans for incomplete workflows, prepares recovery |
+
+### StepOutcome
+
+Every step produces a `StepOutcome`:
+- `success(step_name, output)` — step completed with JSON output
+- `failure(step_name, error)` — step failed with error message
+- Content hash via SHA-256 for tamper evidence
+- Serialized and persisted as part of each checkpoint
+
+### Checkpoint Lifecycle
+
+```
+Step executes → StepOutcome produced → Checkpoint created →
+Checkpoint.saved() → hash verified → next step begins
+```
+
+If crash occurs:
+```
+Process restarts → DurableExecutor.run() → recover_state() →
+load_latest() → verify_hash() → resume from next_step_index
+```
+
+### DurableExecutorConfig
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `checkpoint_enabled` | `true` | Toggle checkpoint persistence |
+| `max_step_retries` | `0` | Retry transient step failures |
+| `step_timeout_ms` | `0` | Per-step timeout (0 = no timeout) |
+| `verify_hashes` | `true` | Verify checkpoint hashes on load |
+
+### CrashRecovery
+
+Scans `CheckpointStore::find_incomplete()` for workflows where:
+- `step_index + 1 < total_steps` (more steps remain)
+- Last step outcome was a success (not a failure)
+
+Returns `RecoveryResult` with:
+- `found`: count of incomplete workflows
+- `recovered`: count successfully prepared for recovery
+- `details`: per-workflow `RecoveryDetail` with `resume_from_step`
+
+### SQLite Schema
+
+```sql
+CREATE TABLE checkpoints (
+    workflow_id TEXT NOT NULL,
+    step_index INTEGER NOT NULL,
+    checkpoint_data TEXT NOT NULL,  -- serialized Checkpoint
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (workflow_id, step_index)
+);
+```
+
+### In-Memory Store
+
+`InMemoryCheckpointStore` uses `HashMap<String, Vec<Checkpoint>>` — suitable for
+testing, not production. All methods are async-compatible.
+
+### Design Decisions
+
+1. **Checkpoint after every step** — Guarantees at most one step re-execution after crash
+2. **Pluggable storage** — Trait-based, in-memory for tests, SQLite for production
+3. **Hash verification** — SHA-256 content hash detects checkpoint tampering
+4. **CrashRecovery is metadata-only** — Returns recovery info; caller reconstructs
+   `Workflow` and passes to `DurableExecutor::run()`. Future: store step definitions
+   in checkpoints for automatic re-execution.
+
+### Acceptance Tests (10 criteria, #30–#39)
+
+| # | Criterion | Test |
+|---|-----------|------|
+| 30 | StepOutcome durability | Checkpoints written after each step |
+| 31 | Crash recovery | Resume from last checkpoint after simulated crash |
+| 32 | Step chaining | Output of step N feeds step N+1 |
+| 33 | Hash verification | Original verifies, tampered fails |
+| 34 | Failure stops workflow | Failed step halts, no further steps execute |
+| 35 | CrashRecovery scan | Finds incomplete, skips complete workflows |
+| 36 | Step retry | Transient failures retried until success |
+| 37 | Empty workflow rejected | No steps → error |
+| 38 | Serialization roundtrip | StepOutcome/Checkpoint serialize/deserialize correctly |
+| 39 | Full pipeline with durable | All phases including 5.1 integrated |
+
+### Unit Tests (30+ in-crate)
+
+WorkflowId, StepOutcome (success/failure/hash), Step (execute/chaining), Workflow
+(creation/steps/metadata), Checkpoint (hash/tamper/complete/incomplete/next_step),
+InMemoryStore (save/load/latest/find_incomplete/count/delete), DurableExecutor
+(simple/failure/empty/chained/durability/crash-recovery/retry/no-checkpoint/cancel),
+CrashRecovery (empty/finds-incomplete/skips-complete/get-checkpoint),
+WorkflowStatus (terminal/display), WorkflowResult (helpers),
+DurableExecutorConfig (default).
+
+---
+
 ## Compile Fix History
 
 | # | Symptom | Root Cause | Fix |
@@ -199,8 +309,7 @@ Config validation, circuit breaker trip/recovery, retry backoff + jitter, rate l
 |----|--------|-------|---------|
 | #1 | `arena/019f710a` | **MERGED** | Phases 1–3 on `main` |
 | #3 | `arena/019f710a` | **CLOSED** | ractor supervisor + `Option<SecretString>` vault (superseded) |
-| #4 | `arena/019f7994` | **OPEN** — 4 commits | Phases 4+5: ProtectedSecret fix, anomaly supervisor, a2a merge, resilience, health |
+| #4 | `arena/019f7994` | **MERGED** | Phases 4+5: ProtectedSecret fix, anomaly supervisor, a2a, resilience, health |
+| #5 | `arena/019f7a09` | **OPEN** — this PR | Phase 5.1: Durable execution, checkpoint durability, crash recovery |
 
----
-
-*Updated: 2026-07-19. Version 0.3.0. 12 crates, 35 Rust files, 11,758 lines, 38 integration tests.*
+*Updated: 2026-07-19. Version 0.4.0. 13 crates, ~39 Rust files, ~13,100 lines, 47 integration tests.*

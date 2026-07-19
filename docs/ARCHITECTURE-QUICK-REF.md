@@ -19,6 +19,9 @@
 | INV-010 | Config validated before use | `config.rs` | `AegisConfig::validate()` | 5 tests |
 | INV-011 | Circuit breaker trips before cascading failure | `resilience/lib.rs` | `CircuitBreaker` | 3 tests |
 | INV-012 | Rate limiter enforces token bucket | `resilience/lib.rs` | `RateLimiter` | 3 tests |
+| INV-013 | Checkpoints verify content hash on load | `durable/lib.rs` | `Checkpoint::verify_hash()` | 3 tests |
+| INV-014 | Every step writes a checkpoint before proceeding | `durable/lib.rs` | `DurableExecutor::run()` | Criteria 30 |
+| INV-015 | Crash recovery resumes from last checkpoint | `durable/lib.rs` | `CrashRecovery::scan()` | Criteria 31, 35 |
 
 ## Credential Flow (INV-001 + INV-002)
 
@@ -39,6 +42,26 @@
   audit entries         any output ever
 ```
 
+## Durable Execution Flow (INV-013 + INV-014)
+
+```
+┌──────────────┐    ┌─────────────────────┐    ┌──────────────────┐
+│ DurableExec  │    │ execute_step()      │    │ CheckpointStore  │
+│ .run()       │───▶│ StepOutcome         │───▶│ .save()          │
+│              │    │                     │    │ verify_hash()    │
+│              │    │ On crash:           │    │                  │
+│              │    │  recover_state()    │◀───│ .load_latest()   │
+│              │    │  resume from step N │    │                  │
+└──────────────┘    └─────────────────────┘    └──────────────────┘
+     │                       │
+     │  CrashRecovery.scan()│
+     │  → find_incomplete() │
+     ▼                       ▼
+  RecoveryResult:       No step outcome is
+  workflow_id +         ever lost. At worst,
+  resume_from_step      one step is re-executed.
+```
+
 ## Dependency Pins
 
 | Must Pin | Version | Why |
@@ -49,6 +72,7 @@
 | `aes-gcm` | `0.11` | `AeadCore::generate_nonce()` API |
 | `secrecy` | `0.10` | Uses `SecretBox<T>`, not old `Secret<T>` |
 | `ed25519-dalek` | `3.0` | API stability |
+| `sha2` | `0.10` | Checkpoint content hashing |
 
 | Must NOT Enable | Feature | Why |
 |-----------------|---------|-----|
@@ -77,11 +101,13 @@ missing_docs = "warn"
 - [x] **Phase 3** — Security pipeline + WASM sandbox + Memory + Plugin signing
 - [x] **Phase 4** — Session + Supervisor (anomaly detection) + Semantic Memory + A2A
 - [x] **Phase 5** — Resilience (circuit breaker, retry, timeout, rate limiter) + Health + Config validation
+- [x] **Phase 5.1** — Durable execution (checkpoint durability, crash recovery, tamper evidence)
 
 ## Open Decisions
 
 1. **A2A branch** — Ship Branch A (standalone AgentCard server), Branch B (MCP-integrated), or both?
 2. **Supervisor architecture** — Anomaly detection (current) vs. ractor DAG (PR #3, closed)
+3. **CrashRecovery auto-re-execution** — Currently metadata-only; future: store step defs in checkpoints
 
 ## Verification Commands
 

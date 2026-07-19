@@ -13,11 +13,12 @@ members = [
     "crates/semantic-memory",
     "crates/a2a",
     "crates/resilience",
+    "crates/durable",
     ".",
 ]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT OR Apache-2.0"
@@ -120,6 +121,7 @@ ferris-aegis-observability = { path = "crates/observability" }
 ferris-aegis-mcp = { path = "crates/mcp" }
 ferris-aegis-security = { path = "crates/security" }
 ferris-aegis-memory = { path = "crates/memory" }
+ferris-aegis-durable = { path = "crates/durable" }
 
 [dev-dependencies]
 ferris-aegis-observability = { path = "crates/observability" }
@@ -132,6 +134,7 @@ ferris-aegis-supervisor = { path = "crates/supervisor" }
 ferris-aegis-semantic-memory = { path = "crates/semantic-memory" }
 ferris-aegis-a2a = { path = "crates/a2a" }
 ferris-aegis-resilience = { path = "crates/resilience" }
+ferris-aegis-durable = { path = "crates/durable" }
 
 [lints]
 workspace = true
